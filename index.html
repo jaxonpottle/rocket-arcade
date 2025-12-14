@@ -3,60 +3,48 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Balance the Rocket • Rocket Arcade</title>
-  <link rel="stylesheet" href="../../styles.css" />
+  <title>Rocket Arcade</title>
+  <meta name="description" content="Two quick browser games. Static site for GitHub Pages." />
+  <link rel="stylesheet" href="./styles.css" />
 </head>
 <body>
-  <div class="game-shell">
-    <div class="game-top">
-      <div class="game-title">
-        <h1>🚀 Balance the Rocket</h1>
-        <p>
-          Tap/press left or right thrusters to keep the rocket within safe limits.
-          Wind gusts get stronger the longer you survive.
-        </p>
+  <header class="site-header">
+    <div class="wrap header-row">
+      <div>
+        <h1>🚀 Rocket Arcade</h1>
+        <p class="sub">Two fast games. Click to play. Add more anytime.</p>
       </div>
-      <a class="btn ghost" href="../../index.html">← Back</a>
-    </div>
-
-    <div class="canvas-wrap">
-      <canvas id="c"></canvas>
-
-      <div class="overlay" id="overlay">
-        <div class="overlay-card">
-          <h3 id="overlayTitle">Balance the Rocket</h3>
-          <p id="overlayText">
-            Hold <b>A / Left</b> for left thruster and <b>D / Right</b> for right thruster.
-            On mobile, use the buttons below. Try to beat your best time.
-          </p>
-
-          <div class="row">
-            <div class="kv">Best: <span id="best">0.0s</span></div>
-            <div class="kv">Last: <span id="last">—</span></div>
-          </div>
-
-          <div class="row">
-            <button class="btn" id="startBtn">Start</button>
-            <button class="btn ghost" id="shareBtn" title="Copy a share message">Share</button>
-          </div>
-
-          <div class="controls" aria-label="Mobile thruster controls">
-            <button class="ctrl-btn" id="leftBtn">
-              ◀ Left Thruster<br><span class="small">A / ←</span>
-            </button>
-            <button class="ctrl-btn" id="rightBtn">
-              Right Thruster ▶<br><span class="small">D / →</span>
-            </button>
-          </div>
-
-          <p class="muted" style="margin-top:12px;font-size:12px;">
-            Tip: small corrections beat big swings. If you overcorrect, you’ll start chasing the oscillation.
-          </p>
-        </div>
+      <div class="header-actions">
+        <a class="btn ghost" href="./README.html">How to run</a>
       </div>
     </div>
-  </div>
+  </header>
 
-  <script type="module" src="game.js"></script>
+  <main class="wrap">
+    <section class="panel">
+      <div class="panel-head">
+        <h2>Games</h2>
+        <div class="pill" id="gameCount">Loading…</div>
+      </div>
+      <div class="grid" id="gamesGrid"></div>
+      <div class="muted" style="margin-top:14px; font-size:13px;">
+        Tip: Add a new game by copying <code>games/_template</code> and updating <code>games/games.json</code>.
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head"><h2>Objectives</h2></div>
+      <ul class="muted" style="margin:0; padding-left:18px; line-height:1.6;">
+        <li><b>Balance the Rocket:</b> survive + complete “stability checks” for bonus score and refuel.</li>
+        <li><b>Orbit Hop:</b> collect 10 stars while staying out of the atmosphere; daily seed mode included.</li>
+      </ul>
+    </section>
+  </main>
+
+  <footer class="wrap footer">
+    <span class="muted">Static site, no build step. Works on GitHub Pages.</span>
+  </footer>
+
+  <script type="module" src="./main.js"></script>
 </body>
 </html>
