@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Rocket Arcade</title>
-  <meta name="description" content="Two quick browser games. Static site for GitHub Pages." />
+  <meta name="description" content="Small, fast browser games. Add more by dropping a folder + updating games.json." />
   <link rel="stylesheet" href="./styles.css" />
 </head>
 <body>
@@ -12,10 +12,10 @@
     <div class="wrap header-row">
       <div>
         <h1>🚀 Rocket Arcade</h1>
-        <p class="sub">Two fast games. Click to play. Add more anytime.</p>
+        <p class="sub">Quick games, clean UI, easy to extend.</p>
       </div>
       <div class="header-actions">
-        <a class="btn ghost" href="./README.html">How to run</a>
+        <a class="btn ghost" href="./README.html" title="How to run locally and add games">How to add games</a>
       </div>
     </div>
   </header>
@@ -27,22 +27,25 @@
         <div class="pill" id="gameCount">Loading…</div>
       </div>
       <div class="grid" id="gamesGrid"></div>
-      <div class="muted" style="margin-top:14px; font-size:13px;">
-        Tip: Add a new game by copying <code>games/_template</code> and updating <code>games/games.json</code>.
+      <div class="hint">
+        Tip: To add a new game, copy <code>games/_template</code>, then update <code>games/games.json</code>.
       </div>
     </section>
 
     <section class="panel">
-      <div class="panel-head"><h2>Objectives</h2></div>
+      <div class="panel-head">
+        <h2>Roadmap</h2>
+      </div>
       <ul class="muted" style="margin:0; padding-left:18px; line-height:1.6;">
-        <li><b>Balance the Rocket:</b> survive + complete “stability checks” for bonus score and refuel.</li>
-        <li><b>Orbit Hop:</b> collect 10 stars while staying out of the atmosphere; daily seed mode included.</li>
+        <li>Daily challenge seeds (same game for everyone each day)</li>
+        <li>Simple global leaderboard (Supabase/Firestore)</li>
+        <li>More one-minute games (3–5 total)</li>
       </ul>
     </section>
   </main>
 
   <footer class="wrap footer">
-    <span class="muted">Static site, no build step. Works on GitHub Pages.</span>
+    <span class="muted">Static site (works on GitHub Pages). No build step.</span>
   </footer>
 
   <script type="module" src="./main.js"></script>
