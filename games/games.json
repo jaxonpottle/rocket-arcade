@@ -1,5 +1,13 @@
 [
   {
+    "id": "daily-gate",
+    "title": "Daily Gate Run",
+    "description": "A daily, shareable one-button challenge. Same gate pattern for everyone today \u2014 compete on score.",
+    "path": "games/daily-gate/index.html",
+    "tag": "daily challenge",
+    "time": "20\u201390s"
+  },
+  {
     "id": "balance-rocket",
     "title": "Balance the Rocket",
     "description": "Left/right thrusters + fuel + stability-check objectives. Score is more than just time.",

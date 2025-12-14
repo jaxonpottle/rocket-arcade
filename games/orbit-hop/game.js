@@ -138,6 +138,7 @@ const world = {
   running: false,
   score: 0,
   visited: new Set(),
+  boundCd: 0,
   stars: [],
   parts: [],
 
@@ -161,7 +162,8 @@ const TUNE = {
   starRadius: 18,
   landSpeed: 280,    // must be slower than this to "visit"
   landPad: 10,       // distance from surface
-  outRescue: 6800,   // pull you back if too far
+  outRescue: 7200,   // soft pull back if too far from planets
+  worldBound: 5000,  // hard boundary: bounce back
   zoomMin: 0.45,
   zoomMax: 1.05,
 };
@@ -186,6 +188,7 @@ function resetWorld(hard=false){
   world.visited = new Set();
   world.stars.length = 0;
   world.parts.length = 0;
+  world.boundCd = 0;
 
   // Seed
   world.seed = dailyToggle?.checked ? dailySeed() : (Math.random()*1e9)>>>0;
@@ -588,6 +591,8 @@ let lastFrame = now();
 
 function update(dt){
   world.t += dt;
+  world.boundCd = Math.max(0, world.boundCd - dt);
+
   const s = world.ship;
 
   // steering + thrust + fuel
@@ -736,11 +741,43 @@ function update(dt){
   const np = nearestPlanet(s.x,s.y);
   if (np.d > TUNE.outRescue){
     const [rx,ry] = norm(np.p.x - s.x, np.p.y - s.y);
-    s.vx += rx*260*dt;
-    s.vy += ry*260*dt;
-    world.score = Math.max(0, world.score - 8*dt);
-    if (np.d > TUNE.outRescue*1.35){
-      gameOver();
+    s.vx += rx*240*dt;
+    s.vy += ry*240*dt;
+    world.score = Math.max(0, world.score - 6*dt);
+  }
+
+  // hard boundary bubble (keeps you in the playable solar neighborhood)
+  const d0 = Math.hypot(s.x, s.y);
+  if (d0 > TUNE.worldBound){
+    const nx = s.x / d0, ny = s.y / d0;
+    // clamp to boundary
+    s.x = nx * TUNE.worldBound;
+    s.y = ny * TUNE.worldBound;
+
+    // reflect outward velocity component
+    const vout = s.vx*nx + s.vy*ny;
+    if (vout > 0){
+      s.vx -= 1.9*vout*nx;
+      s.vy -= 1.9*vout*ny;
+      s.vx *= 0.92;
+      s.vy *= 0.92;
+    }
+
+    // tiny inward nudge to avoid sticky edge
+    s.vx += (-nx)*60*dt;
+    s.vy += (-ny)*60*dt;
+
+    world.score = Math.max(0, world.score - 10*dt);
+
+    if (world.boundCd <= 0){
+      world.boundCd = 0.35;
+      beep(140, 0.07, 0.08);
+      // spark burst
+      for (let i=0;i<14;i++){
+        const a = Math.random()*Math.PI*2;
+        const sp = 140 + Math.random()*180;
+        world.parts.push({ x:s.x, y:s.y, vx:Math.cos(a)*sp, vy:Math.sin(a)*sp, life:0.35+Math.random()*0.25, r:1.6+Math.random()*2.4 });
+      }
     }
   }
 

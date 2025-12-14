@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Daily Gate Run • Rocket Arcade</title>
+  <link rel="stylesheet" href="../../styles.css" />
+</head>
+<body>
+  <div class="game-shell">
+    <div class="game-top">
+      <div class="game-title">
+        <h1>📅 Daily Gate Run</h1>
+        <p>One‑button daily challenge: thread the ship through gates. Same pattern for everyone today.</p>
+      </div>
+      <div class="game-top-right">
+        <a class="btn ghost" href="../../index.html">← Back</a>
+      </div>
+    </div>
+
+    <div class="pill-row">
+      <span class="pill">Space / click / touch = boost</span>
+      <span class="pill">Release = fall</span>
+      <span class="pill" id="dayPill">daily</span>
+    </div>
+
+    <div class="canvas-wrap">
+      <canvas id="c"></canvas>
+
+      <div id="overlay" class="overlay">
+        <div class="overlay-card">
+          <h2 id="overlayTitle">Daily Gate Run</h2>
+          <p id="overlayText">Get as many gates as you can. Today’s layout is the same for everyone — share your score.</p>
+
+          <div class="overlay-stats">
+            <div><strong>Best:</strong> <span id="best">0</span></div>
+            <div><strong>Last:</strong> <span id="last">0</span></div>
+            <div><strong>Today:</strong> <span id="dayLabel"></span></div>
+          </div>
+
+          <div class="overlay-controls">
+            <label class="toggle"><input id="soundToggle" type="checkbox" checked> <span>Sound</span></label>
+            <label class="toggle"><input id="practiceToggle" type="checkbox"> <span>Practice</span></label>
+          </div>
+
+          <div class="overlay-buttons">
+            <button id="startBtn" class="btn primary">Start</button>
+            <button id="shareBtn" class="btn">Share</button>
+            <button id="resetBtn" class="btn danger">Reset</button>
+          </div>
+
+          <div class="overlay-hint">
+            Tip: Small rhythmic taps beat panic‑holding. In practice mode the layout changes each run.
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="./game.js"></script>
+</body>
+</html>

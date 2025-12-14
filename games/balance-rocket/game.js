@@ -89,14 +89,15 @@ const state = {
 const TUNE = {
   maxAng: 0.62,       // ~35deg
   maxX: 0.42,         // fraction of width
-  baseWind: 0.35,
-  windRamp: 0.08,     // per second
+  baseWind: 0.16,
+  windRamp: 0.025,     // per second
   windGust: 0.65,
   windFreq: 0.12,
+  windMax: 0.78,       // cap so it stays playable
 
   torque: 2.4,
   dampAng: 1.15,
-  dampX: 0.55,
+  dampX: 0.85,
 
   fuelBurn: 0.16,     // per sec at full thrust
   fuelRegen: 0.08,    // per sec when coasting
@@ -494,7 +495,7 @@ function update(dt){
   state.t += dt;
 
   // wind: mean ~0 with gust + slow drift (ramps over time)
-  const amp  = TUNE.baseWind + TUNE.windRamp*state.t;
+  const amp  = Math.min(TUNE.windMax, TUNE.baseWind + TUNE.windRamp*state.t);
   const gust = Math.sin(state.t*TUNE.windFreq*2*Math.PI) * TUNE.windGust;
   const noise = (Math.sin(state.t*1.7) + Math.sin(state.t*0.91 + 2.1))*0.30;
   const drift = 0.35*Math.sin(state.t*0.23 + 1.1) + 0.25*Math.sin(state.t*0.07 + 2.7);
@@ -560,11 +561,11 @@ function update(dt){
 
   // apply dynamics (simple)
   // wind pushes angle + lateral position
-  const torqueWind = wind * 1.25;
-  const forceWind = wind * 260;
+  const torqueWind = wind * 0.95;
+  const forceWind = wind * 115;
 
   const torqueCtrl = (thrR - thrL) * TUNE.torque * (isEasy()?0.9:1.0);
-  const forceCtrl  = (thrR - thrL) * 95;
+  const forceCtrl  = (thrR - thrL) * 240;
 
   state.w += (torqueWind + torqueCtrl) * dt;
   state.w *= Math.exp(-TUNE.dampAng*dt);
@@ -685,8 +686,8 @@ function drawRocket(rocketX, rocketY){
   // nose cone (smooth)
   ctx.fillStyle = 'rgba(255,255,255,.94)';
   ctx.beginPath();
-  ctx.moveTo(-14, -52);
-  ctx.quadraticCurveTo(0, -78, 14, -52);
+  ctx.moveTo(-16, -52);
+  ctx.quadraticCurveTo(0, -84, 16, -52);
   ctx.closePath();
   ctx.fill();
 
