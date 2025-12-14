@@ -58,6 +58,8 @@ const state = {
   checksDone:0,
   checksPassed:0,
 
+  wind:0,
+
   // dynamics
   x:0,
   vx:0,
@@ -491,15 +493,17 @@ let lastFrame = now();
 function update(dt){
   state.t += dt;
 
-  // ramping wind: smooth + gusty
-  const ramp = TUNE.baseWind + TUNE.windRamp*state.t;
+  // wind: mean ~0 with gust + slow drift (ramps over time)
+  const amp  = TUNE.baseWind + TUNE.windRamp*state.t;
   const gust = Math.sin(state.t*TUNE.windFreq*2*Math.PI) * TUNE.windGust;
-  const noise = (Math.sin(state.t*1.7) + Math.sin(state.t*0.91 + 2.1))*0.18;
-  let wind = ramp * (0.45 + 0.55*Math.tanh(gust + noise));
+  const noise = (Math.sin(state.t*1.7) + Math.sin(state.t*0.91 + 2.1))*0.30;
+  const drift = 0.35*Math.sin(state.t*0.23 + 1.1) + 0.25*Math.sin(state.t*0.07 + 2.7);
+  let wind = amp * Math.tanh(gust + noise + drift);
 
   if (isEasy()){
-    wind *= 0.72;
+    wind *= 0.75;
   }
+  state.wind = wind;
 
   // stability check scheduling
   if (!state.checkActive){
@@ -616,9 +620,10 @@ function drawHUD(){
   ctx.fillText(`time ${state.t.toFixed(1)}s    score ${Math.floor(state.score)}    checks ${state.checksPassed}/${state.checksDone}`, 16, 22);
 
   // wind indicator
-  const windPct = clamp((Math.sin(state.t*TUNE.windFreq*2*Math.PI)*0.5 + 0.5)*100 + (state.x/W)*30, 0, 100);
+  const ampNow = TUNE.baseWind + TUNE.windRamp*state.t;
+  const windPct = Math.round(clamp(state.wind / (ampNow || 1e-6), -1, 1) * 100);
   ctx.fillStyle = 'rgba(255,255,255,.60)';
-  ctx.fillText(`wind ${Math.floor(windPct)-50}%`, 16, 42);
+  ctx.fillText(`wind ${windPct}%`, 16, 42);
 
   // fuel bar
   const x = 16, y = 54, w = 220, h = 10;
@@ -677,14 +682,21 @@ function drawRocket(rocketX, rocketY){
   ctx.fillStyle = bodyG;
   roundRect(ctx, -16, -52, 32, 92, 14); ctx.fill();
 
-  // nose cone
-  ctx.fillStyle = 'rgba(255,255,255,.92)';
+  // nose cone (smooth)
+  ctx.fillStyle = 'rgba(255,255,255,.94)';
   ctx.beginPath();
-  ctx.moveTo(0, -70);
-  ctx.lineTo(14, -52);
-  ctx.lineTo(-14, -52);
+  ctx.moveTo(-14, -52);
+  ctx.quadraticCurveTo(0, -78, 14, -52);
   ctx.closePath();
   ctx.fill();
+
+  // subtle tip highlight
+  ctx.strokeStyle = 'rgba(255,255,255,.20)';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(0, -74);
+  ctx.lineTo(0, -62);
+  ctx.stroke();
 
   // small highlight strip
   ctx.fillStyle = 'rgba(96,165,250,.18)';

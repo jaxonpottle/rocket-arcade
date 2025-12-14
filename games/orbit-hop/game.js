@@ -141,7 +141,7 @@ const world = {
   stars: [],
   parts: [],
 
-  ship: { x:0, y:0, vx:0, vy:0, fuel: 1, landed: false, landPlanet: null },
+  ship: { x:0, y:0, vx:0, vy:0, heading: 0, fuel: 1, landed: false, landPlanet: null },
 
   cam: { x:0, y:0, z:1, vx:0, vy:0 },
 
@@ -150,20 +150,20 @@ const world = {
 };
 
 const TUNE = {
-  G: 22000,          // gravity constant (scaled)
-  soft: 120,         // softening
-  thrust: 760,       // accel per sec^2
-  maxSpeed: 1900,
-  drag: 0.010,       // space "stabilizer" (tiny)
-  atmoDrag: 0.35,    // inside atmosphere ring
-  fuelBurn: 0.11,
-  fuelRegen: 0.05,
+  G: 6000000,          // gravity constant (scaled)
+  soft: 180,         // softening
+  thrust: 520,       // accel per sec^2
+  maxSpeed: 1400,
+  drag: 0.0025,       // space "stabilizer" (tiny)
+  atmoDrag: 0.22,    // inside atmosphere ring
+  fuelBurn: 0.10,
+  fuelRegen: 0.06,
   starRadius: 18,
-  landSpeed: 320,    // must be slower than this to "visit"
+  landSpeed: 280,    // must be slower than this to "visit"
   landPad: 10,       // distance from surface
-  outRescue: 5200,   // pull you back if too far
-  zoomMin: 0.40,
-  zoomMax: 1.0,
+  outRescue: 6800,   // pull you back if too far
+  zoomMin: 0.45,
+  zoomMax: 1.05,
 };
 
 function makeStarfield(){
@@ -204,11 +204,16 @@ function resetWorld(hard=false){
 
   // Ship starts in a stable-ish orbit around planet A
   const a = rnd()*Math.PI*2;
-  const R = 520;
-  world.ship.x = Math.cos(a)*R;
-  world.ship.y = Math.sin(a)*R;
-  world.ship.vx = -Math.sin(a)*520;
-  world.ship.vy =  Math.cos(a)*520;
+  const p0 = world.planets[0];
+  const R = p0.r + 360;
+  const mu = TUNE.G * p0.mass;
+  const v = Math.sqrt(mu / R) * (0.98 + rnd()*0.06);
+  world.ship.x = p0.x + Math.cos(a)*R;
+  world.ship.y = p0.y + Math.sin(a)*R;
+  world.ship.vx = -Math.sin(a)*v;
+  world.ship.vy =  Math.cos(a)*v;
+  world.ship.heading = Math.atan2(world.ship.vy, world.ship.vx);
+
   world.ship.fuel = 1;
   world.ship.landed = false;
   world.ship.landPlanet = null;
@@ -244,7 +249,7 @@ function showOverlay(kind){
   overlay.style.display = 'flex';
   if (kind === 'start'){
     overlayTitle.textContent = 'Orbit Hop';
-    overlayText.textContent = 'Hold to thrust forward. Visit planets by landing gently. Collect stars. Gravity is your steering wheel.';
+    overlayText.textContent = 'Hold to thrust. Steer with A/D or ←/→. Brake with S or ↓. Land gently to visit planets and grab stars.';
     startBtn.textContent = 'Start';
   } else if (kind === 'gameover'){
     overlayTitle.textContent = 'Lost in space 😵‍💫';
@@ -282,6 +287,9 @@ function startGame(){
 
 // ----- Input -----
 let thrusting = false;
+let turnL = false;
+let turnR = false;
+let brake = false;
 
 function setThrust(on){
   thrusting = on;
@@ -293,8 +301,16 @@ window.addEventListener('pointerup', (e)=>{ setThrust(false); });
 
 window.addEventListener('keydown', (e)=>{
   if (e.code === 'Space'){ if (!world.running) startGame(); setThrust(true); }
+  if (e.code === 'KeyA' || e.code === 'ArrowLeft'){ turnL = true; e.preventDefault(); }
+  if (e.code === 'KeyD' || e.code === 'ArrowRight'){ turnR = true; e.preventDefault(); }
+  if (e.code === 'KeyS' || e.code === 'ArrowDown'){ brake = true; e.preventDefault(); }
 });
-window.addEventListener('keyup', (e)=>{ if (e.code === 'Space') setThrust(false); });
+window.addEventListener('keyup', (e)=>{
+  if (e.code === 'Space') setThrust(false);
+  if (e.code === 'KeyA' || e.code === 'ArrowLeft') turnL = false;
+  if (e.code === 'KeyD' || e.code === 'ArrowRight') turnR = false;
+  if (e.code === 'KeyS' || e.code === 'ArrowDown') brake = false;
+});
 
 // Buttons
 startBtn.addEventListener('click', ()=>{
@@ -467,9 +483,7 @@ function drawStar(st){
 
 function drawShip(){
   const s = world.ship;
-  const speed = len(s.vx,s.vy);
-  const [dx,dy] = speed > 2 ? norm(s.vx,s.vy) : norm(s.x - world.planets[0].x, s.y - world.planets[0].y);
-  const ang = Math.atan2(dy,dx);
+  const ang = s.heading;
 
   ctx.save();
   ctx.translate(s.x, s.y);
@@ -576,27 +590,46 @@ function update(dt){
   world.t += dt;
   const s = world.ship;
 
-  // thrust & fuel
+  // steering + thrust + fuel
   let eng = 0;
 
-  if (!s.landed && thrusting && s.fuel > 0.01){
-    const speed = len(s.vx,s.vy);
-    let tx=0, ty=0;
-    if (speed > 35){
-      [tx,ty] = norm(s.vx,s.vy); // prograde
-    } else {
-      // if nearly stopped, thrust away from nearest planet
-      const np = nearestPlanet(s.x,s.y);
-      [tx,ty] = norm(s.x - np.p.x, s.y - np.p.y);
-    }
-    s.vx += tx*TUNE.thrust*dt;
-    s.vy += ty*TUNE.thrust*dt;
+  // steering (rotate heading). If you're not steering, we gently align to velocity.
+  if (!s.landed){
+    const turn = (turnR ? 1 : 0) - (turnL ? 1 : 0);
+    const turnRate = 2.6; // rad/s
+    s.heading += turn * turnRate * dt;
 
-    s.fuel = clamp(s.fuel - TUNE.fuelBurn*dt, 0, 1);
+    if (turn === 0){
+      const sp = len(s.vx, s.vy);
+      if (sp > 18){
+        const va = Math.atan2(s.vy, s.vx);
+        s.heading = angleLerp(s.heading, va, 0.06);
+      }
+    }
+  }
+
+  // thrust (hold click/touch/space). Optional brake (S / ↓) uses retro burn.
+  if (!s.landed && thrusting && s.fuel > 0.01){
+    let tx = Math.cos(s.heading);
+    let ty = Math.sin(s.heading);
+
+    if (brake){
+      const sp = len(s.vx, s.vy);
+      if (sp > 10){
+        [tx, ty] = norm(-s.vx, -s.vy); // true retrograde
+      } else {
+        tx = -tx; ty = -ty;
+      }
+    }
+
+    s.vx += tx * TUNE.thrust * dt;
+    s.vy += ty * TUNE.thrust * dt;
+
+    s.fuel = clamp(s.fuel - TUNE.fuelBurn * dt, 0, 1);
     eng = 1;
     spawnTrail();
   } else {
-    s.fuel = clamp(s.fuel + TUNE.fuelRegen*dt, 0, 1);
+    s.fuel = clamp(s.fuel + TUNE.fuelRegen * dt, 0, 1);
   }
 
   setEngine(eng);
@@ -676,8 +709,8 @@ function update(dt){
       s.landed = false;
       const p = world.planets.find(pp=>pp.id===s.landPlanet) || world.planets[0];
       const [nx,ny] = norm(s.x - p.x, s.y - p.y);
-      s.vx = nx*420;
-      s.vy = ny*420;
+      s.vx = nx*320;
+      s.vy = ny*320;
       s.fuel = clamp(s.fuel - 0.08, 0, 1);
       s.landPlanet = null;
       beep(520, 0.12, 0.10);
@@ -699,10 +732,16 @@ function update(dt){
   // scoring over time (survival)
   world.score += 22*dt + 0.02*sp*dt;
 
-  // lose condition: drift too far from everything
+  // lose condition: drift too far from everything (soft-rescue first)
   const np = nearestPlanet(s.x,s.y);
   if (np.d > TUNE.outRescue){
-    gameOver();
+    const [rx,ry] = norm(np.p.x - s.x, np.p.y - s.y);
+    s.vx += rx*260*dt;
+    s.vy += ry*260*dt;
+    world.score = Math.max(0, world.score - 8*dt);
+    if (np.d > TUNE.outRescue*1.35){
+      gameOver();
+    }
   }
 
   stepParticles(dt);
@@ -721,6 +760,15 @@ function update(dt){
 }
 
 function lerp(a,b,t){ return a + (b-a)*t; }
+
+function angleWrap(a){
+  while (a > Math.PI) a -= Math.PI*2;
+  while (a < -Math.PI) a += Math.PI*2;
+  return a;
+}
+function angleLerp(a,b,t){
+  return a + angleWrap(b - a) * t;
+}
 
 function draw(){
   drawBackground(world.t);
