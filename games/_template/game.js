@@ -1,0 +1,18 @@
+const c=document.getElementById('c');
+const ctx=c.getContext('2d',{alpha:false});
+let dpr=1,W=0,H=0;
+function resize(){
+  dpr=Math.max(1,Math.min(2,window.devicePixelRatio||1));
+  const r=c.getBoundingClientRect();
+  W=Math.floor(r.width); H=Math.floor(r.height);
+  c.width=Math.floor(W*dpr); c.height=Math.floor(H*dpr);
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+}
+window.addEventListener('resize',resize);
+function draw(){
+  ctx.fillStyle='#060a12'; ctx.fillRect(0,0,W,H);
+  ctx.fillStyle='rgba(255,255,255,.9)';
+  ctx.font='16px ui-monospace, Menlo, Consolas, monospace';
+  ctx.fillText('Your game goes here', 16, 28);
+}
+resize(); draw();

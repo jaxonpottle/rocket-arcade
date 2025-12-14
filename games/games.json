@@ -1,0 +1,18 @@
+[
+  {
+    "id": "balance-rocket",
+    "title": "Balance the Rocket",
+    "description": "Left/right thrusters + fuel + stability-check objectives. High score is more than just time.",
+    "path": "games/balance-rocket/index.html",
+    "tag": "skill + objectives",
+    "time": "45\u2013180s"
+  },
+  {
+    "id": "orbit-hop",
+    "title": "Orbit Hop",
+    "description": "One-button orbital game: hold to boost outward, avoid atmosphere + debris, collect stars.",
+    "path": "games/orbit-hop/index.html",
+    "tag": "one-button",
+    "time": "30\u2013180s"
+  }
+]

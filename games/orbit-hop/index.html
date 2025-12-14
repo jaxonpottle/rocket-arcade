@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Orbit Hop • Rocket Arcade</title>
+  <link rel="stylesheet" href="../../styles.css" />
+</head>
+<body>
+  <div class="game-shell">
+    <div class="game-top">
+      <div class="game-title">
+        <h1>🪐 Orbit Hop</h1>
+        <p>Hold to boost outward, release to coast. Avoid atmosphere + debris. Collect 10 stars.</p>
+        <div class="badges">
+          <div class="badge">Hold = thrust</div>
+          <div class="badge">Release = coast</div>
+          <div class="badge">Daily seed mode</div>
+        </div>
+      </div>
+      <a class="btn ghost" href="../../index.html">← Back</a>
+    </div>
+
+    <div class="canvas-wrap" id="wrap">
+      <canvas id="c"></canvas>
+
+      <div class="overlay" id="overlay">
+        <div class="overlay-card">
+          <h3 id="title">Orbit Hop</h3>
+          <p class="muted" id="desc">Collect <b>10 stars</b>. Don’t dip into the atmosphere.</p>
+
+          <div class="row">
+            <div class="kv">Best Stars: <span id="bestS">0</span></div>
+            <div class="kv">Best Time: <span id="bestT">0.0s</span></div>
+          </div>
+          <div class="row">
+            <div class="kv">Last: <span id="last">—</span></div>
+            <div class="kv">Stars: <span id="lastS">—</span></div>
+          </div>
+
+          <div class="toggle-row">
+            <div class="switch"><input type="checkbox" id="sound"><label for="sound">Sound</label></div>
+            <div class="switch"><input type="checkbox" id="daily"><label for="daily">Daily seed</label></div>
+          </div>
+
+          <div class="row">
+            <button class="btn" id="start">Start</button>
+            <button class="btn ghost" id="share">Share</button>
+            <button class="btn danger" id="reset">Reset</button>
+          </div>
+
+          <p class="muted" style="margin-top:12px; font-size:12px;">
+            Hint: boost near periapsis. Spamming thrust usually makes your orbit worse.
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="game.js"></script>
+</body>
+</html>

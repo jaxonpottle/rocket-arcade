@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>New Game • Rocket Arcade</title>
+  <link rel="stylesheet" href="../../styles.css" />
+</head>
+<body>
+  <div class="game-shell">
+    <div class="game-top">
+      <div class="game-title">
+        <h1>🎮 New Game</h1>
+        <p>Copy this folder, rename it, then build your game in <code>game.js</code>.</p>
+      </div>
+      <a class="btn ghost" href="../../index.html">← Back</a>
+    </div>
+
+    <div class="canvas-wrap">
+      <canvas id="c"></canvas>
+      <div class="overlay" id="overlay">
+        <div class="overlay-card">
+          <h3>Template</h3>
+          <p class="muted">Start by drawing something on the canvas. Then add input, loop, scoring.</p>
+          <div class="row">
+            <button class="btn" id="startBtn">Start</button>
+            <button class="btn ghost" onclick="location.href='../../index.html'">Home</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="game.js"></script>
+</body>
+</html>
