@@ -1,0 +1,10 @@
+[
+  {
+    "id": "balance-rocket",
+    "title": "Balance the Rocket",
+    "description": "Keep the rocket upright using left/right thrusters. Wind gusts ramp up. How long can you survive?",
+    "path": "games/balance-rocket/index.html",
+    "tag": "one-minute game",
+    "time": "30\u2013180s"
+  }
+]

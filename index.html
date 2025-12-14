@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Balance the Rocket • Rocket Arcade</title>
+  <link rel="stylesheet" href="../../styles.css" />
+</head>
+<body>
+  <div class="game-shell">
+    <div class="game-top">
+      <div class="game-title">
+        <h1>🚀 Balance the Rocket</h1>
+        <p>
+          Tap/press left or right thrusters to keep the rocket within safe limits.
+          Wind gusts get stronger the longer you survive.
+        </p>
+      </div>
+      <a class="btn ghost" href="../../index.html">← Back</a>
+    </div>
+
+    <div class="canvas-wrap">
+      <canvas id="c"></canvas>
+
+      <div class="overlay" id="overlay">
+        <div class="overlay-card">
+          <h3 id="overlayTitle">Balance the Rocket</h3>
+          <p id="overlayText">
+            Hold <b>A / Left</b> for left thruster and <b>D / Right</b> for right thruster.
+            On mobile, use the buttons below. Try to beat your best time.
+          </p>
+
+          <div class="row">
+            <div class="kv">Best: <span id="best">0.0s</span></div>
+            <div class="kv">Last: <span id="last">—</span></div>
+          </div>
+
+          <div class="row">
+            <button class="btn" id="startBtn">Start</button>
+            <button class="btn ghost" id="shareBtn" title="Copy a share message">Share</button>
+          </div>
+
+          <div class="controls" aria-label="Mobile thruster controls">
+            <button class="ctrl-btn" id="leftBtn">
+              ◀ Left Thruster<br><span class="small">A / ←</span>
+            </button>
+            <button class="ctrl-btn" id="rightBtn">
+              Right Thruster ▶<br><span class="small">D / →</span>
+            </button>
+          </div>
+
+          <p class="muted" style="margin-top:12px;font-size:12px;">
+            Tip: small corrections beat big swings. If you overcorrect, you’ll start chasing the oscillation.
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="game.js"></script>
+</body>
+</html>
