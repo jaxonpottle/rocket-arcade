@@ -1,43 +1,46 @@
 <!doctype html>
-<html lang="en">
+<html lang=\"en\">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta charset=\"utf-8\" />
+  <meta name=\"viewport\" content=\"width=device-width,initial-scale=1\" />
   <title>README • Rocket Arcade</title>
-  <link rel="stylesheet" href="./styles.css" />
+  <link rel=\"stylesheet\" href=\"styles.css\" />
 </head>
 <body>
-  <div class="game-shell">
-    <div class="game-top">
-      <div class="game-title">
+  <div class=\"game-shell\">
+    <div class=\"game-top\">
+      <div class=\"game-title\">
         <h1>📄 Rocket Arcade – README</h1>
-        <p>How to run locally and deploy to GitHub Pages.</p>
+        <p>How to run locally and add games.</p>
       </div>
-      <a class="btn ghost" href="./index.html">← Back</a>
+      <a class=\"btn ghost\" href=\"index.html\">← Back</a>
     </div>
 
-    <div class="panel">
+    <div class=\"panel\">
       <h2>Run locally</h2>
-      <p class="muted">Use a local server (not <code>file://</code>), because the homepage loads <code>games/games.json</code>.</p>
-      <ul class="muted">
+      <p class=\"muted\">Because the homepage uses <code>fetch()</code> for <code>games/games.json</code>, you need a local server (not <code>file://</code>).</p>
+      <p><b>Python</b></p>
+      <ul class=\"muted\">
         <li>Windows: <code>py -m http.server 8000</code></li>
         <li>Mac/Linux: <code>python3 -m http.server 8000</code></li>
         <li>Open <code>http://localhost:8000</code></li>
       </ul>
 
-      <h2>Deploy (GitHub Pages)</h2>
-      <ol class="muted">
-        <li>Repo Settings → Pages</li>
-        <li>Source: Deploy from a branch</li>
-        <li>Branch: <code>main</code>, Folder: <code>/ (root)</code></li>
-      </ol>
-
       <h2>Add a new game</h2>
-      <ol class="muted">
+      <ol class=\"muted\">
         <li>Copy <code>games/_template/</code> → <code>games/&lt;your-game-id&gt;/</code></li>
-        <li>Build the game in <code>game.js</code></li>
+        <li>Edit <code>index.html</code> and <code>game.js</code></li>
         <li>Add an entry to <code>games/games.json</code></li>
       </ol>
+
+      <h2>Deploy (GitHub Pages)</h2>
+      <ol class=\"muted\">
+        <li>Create a GitHub repo and push this folder</li>
+        <li>Repo Settings → Pages → Source: <code>main</code> + <code>/root</code></li>
+        <li>Your site is live</li>
+      </ol>
+
+      <p class=\"muted\">If you want, tell me what stack you prefer (plain static vs Next.js). I can convert this into a component-based site and set up a clean content pipeline for new games.</p>
     </div>
   </div>
 </body>

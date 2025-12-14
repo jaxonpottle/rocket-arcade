@@ -1,332 +1,792 @@
-const c=document.getElementById('c');
-const ctx=c.getContext('2d',{alpha:false});
-const wrap=document.getElementById('wrap');
-const overlay=document.getElementById('overlay');
+// Orbit Hop — a forgiving, faster orbital toy with multiple planets + camera follow.
+// Hold (mouse/touch/space) to thrust forward. Release to coast.
+// Land gently to "visit" planets. Collect stars.
 
-const bestSEl=document.getElementById('bestS');
-const bestTEl=document.getElementById('bestT');
-const lastEl=document.getElementById('last');
-const lastSEl=document.getElementById('lastS');
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d', { alpha: false });
 
-const startBtn=document.getElementById('start');
-const shareBtn=document.getElementById('share');
-const resetBtn=document.getElementById('reset');
-const soundToggle=document.getElementById('sound');
-const dailyToggle=document.getElementById('daily');
+const overlay = document.getElementById('overlay');
+const overlayTitle = document.getElementById('overlayTitle');
+const overlayText  = document.getElementById('overlayText');
 
-const STORE={bs:'ra.orbit.bestStars', bt:'ra.orbit.bestTime', snd:'ra.orbit.snd', day:'ra.orbit.day'};
-const clamp=(x,a,b)=>Math.max(a,Math.min(b,x));
-const len=(x,y)=>Math.hypot(x,y);
-const fmt=t=>`${t.toFixed(1)}s`;
+const startBtn = document.getElementById('startBtn');
+const shareBtn = document.getElementById('shareBtn');
+const resetBtn = document.getElementById('resetBtn');
 
-let dpr=1,W=0,H=0;
+const bestEl = document.getElementById('best');
+const lastEl = document.getElementById('last');
+const modeLabel = document.getElementById('modeLabel');
+const seedLabel = document.getElementById('seedLabel');
+
+const soundToggle = document.getElementById('soundToggle');
+const dailyToggle = document.getElementById('dailyToggle');
+
+let W=0,H=0,DPR=1;
+
 function resize(){
-  dpr=Math.max(1,Math.min(2,window.devicePixelRatio||1));
-  const r=c.getBoundingClientRect();
-  W=Math.floor(r.width); H=Math.floor(r.height);
-  c.width=Math.floor(W*dpr); c.height=Math.floor(H*dpr);
-  ctx.setTransform(dpr,0,0,dpr,0,0);
+  const rect = canvas.getBoundingClientRect();
+  DPR = Math.min(2, window.devicePixelRatio || 1);
+  W = Math.max(320, Math.floor(rect.width));
+  H = Math.max(200, Math.floor(rect.height));
+  canvas.width = Math.floor(W*DPR);
+  canvas.height= Math.floor(H*DPR);
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+  makeStarfield();
 }
-window.addEventListener('resize',resize);
+window.addEventListener('resize', resize);
 
-// sound
-let ac=null;
-function ensureAudio(){ if(ac) return ac; const AC=window.AudioContext||window.webkitAudioContext; if(!AC) return null; ac=new AC(); return ac; }
-function beep(f,d=0.06,g=0.03){
-  if(!soundToggle.checked) return;
-  const a=ensureAudio(); if(!a) return;
-  const o=a.createOscillator(), gg=a.createGain();
-  o.type='sine'; o.frequency.value=f; gg.gain.value=g;
-  o.connect(gg); gg.connect(a.destination);
-  o.start(); o.stop(a.currentTime+d);
+function clamp(x,a,b){ return Math.max(a, Math.min(b, x)); }
+function len2(x,y){ return x*x+y*y; }
+function len(x,y){ return Math.sqrt(x*x+y*y); }
+function norm(x,y){
+  const l = Math.sqrt(x*x+y*y) || 1;
+  return [x/l, y/l];
+}
+function now(){ return performance.now(); }
+
+function mulberry32(seed){
+  let t = seed >>> 0;
+  return function(){
+    t += 0x6D2B79F5;
+    let r = Math.imul(t ^ (t >>> 15), 1 | t);
+    r ^= r + Math.imul(r ^ (r >>> 7), 61 | r);
+    return ((r ^ (r >>> 14)) >>> 0) / 4294967296;
+  };
 }
 
-// seeded rng for daily mode
-function xmur3(str){let h=1779033703^str.length;for(let i=0;i<str.length;i++){h=Math.imul(h^str.charCodeAt(i),3432918353);h=(h<<13)|(h>>>19);}return()=>{h=Math.imul(h^(h>>>16),2246822507);h=Math.imul(h^(h>>>13),3266489909);return (h^=h>>>16)>>>0;};}
-function sfc32(a,b,c,d){return()=>{a>>>=0;b>>>=0;c>>>=0;d>>>=0;let t=(a+b)|0;a=b^(b>>>9);b=(c+(c<<3))|0;c=(c<<21)|(c>>>11);d=(d+1)|0;t=(t+d)|0;c=(c+t)|0;return (t>>>0)/4294967296;};}
-function makeRng(){
-  if(!dailyToggle.checked) return Math.random;
-  const now=new Date();
-  const seedStr=`${now.getUTCFullYear()}-${now.getUTCMonth()+1}-${now.getUTCDate()}`;
-  const seed=xmur3(seedStr);
-  return sfc32(seed(),seed(),seed(),seed());
+function dailySeed(){
+  const d = new Date();
+  const y = d.getUTCFullYear();
+  const m = d.getUTCMonth()+1;
+  const day = d.getUTCDate();
+  // yyyymmdd
+  return (y*10000 + m*100 + day) >>> 0;
 }
 
-// persistence
-let bestStars=Number(localStorage.getItem(STORE.bs)||'0')||0;
-let bestTime =Number(localStorage.getItem(STORE.bt)||'0')||0;
-bestSEl.textContent=bestStars;
-bestTEl.textContent=fmt(bestTime);
+const STORAGE_KEY = 'rocketArcade.orbit.best.v2';
+let bestScore = parseInt(localStorage.getItem(STORAGE_KEY) || '0', 10) || 0;
+bestEl.textContent = String(bestScore);
 
-soundToggle.checked=(localStorage.getItem(STORE.snd)||'0')==='1';
-dailyToggle.checked=(localStorage.getItem(STORE.day)||'0')==='1';
-soundToggle.addEventListener('change',()=>localStorage.setItem(STORE.snd, soundToggle.checked?'1':'0'));
-dailyToggle.addEventListener('change',()=>localStorage.setItem(STORE.day, dailyToggle.checked?'1':'0'));
+// ----- Audio (tiny whoosh + beeps) -----
+let audio = null;
+function ensureAudio(){
+  if (!soundToggle?.checked) return;
+  if (audio && audio.ctx) return;
+  const AC = window.AudioContext || window.webkitAudioContext;
+  if (!AC) return;
 
-let lastTime=null,lastStars=null,lastHit='—';
+  const actx = new AC();
+  const master = actx.createGain();
+  master.gain.value = 0.55;
+  master.connect(actx.destination);
 
-let running=false, hold=false, tStart=0, tNow=0, tLast=0;
-const s={
-  rng:Math.random,
-  cx:0, cy:0, planetR:110, atmR:160,
-  x:0,y:0,vx:0,vy:0,
-  mu:35000, boost:220, drag:0.0022,
-  stars:[], debris:[], parts:[],
-  goal:10, got:0, flash:0
+  // simple wind/engine noise
+  const dur = 1.4;
+  const buf = actx.createBuffer(1, Math.floor(actx.sampleRate*dur), actx.sampleRate);
+  const data = buf.getChannelData(0);
+  for (let i=0;i<data.length;i++){
+    data[i] = (Math.random()*2-1) * 0.5;
+  }
+  const src = actx.createBufferSource();
+  src.buffer = buf;
+  src.loop = true;
+
+  const hp = actx.createBiquadFilter();
+  hp.type = 'highpass'; hp.frequency.value = 80;
+
+  const bp = actx.createBiquadFilter();
+  bp.type = 'bandpass'; bp.frequency.value = 220; bp.Q.value = 0.7;
+
+  const g = actx.createGain();
+  g.gain.value = 0;
+
+  src.connect(hp); hp.connect(bp); bp.connect(g); g.connect(master);
+  src.start();
+
+  audio = { ctx: actx, master, g, bp };
+}
+
+function setEngine(p){
+  if (!audio || !soundToggle?.checked) return;
+  const t = audio.ctx.currentTime;
+  const x = clamp(p,0,1);
+  audio.g.gain.setTargetAtTime(0.12*x, t, 0.04);
+  audio.bp.frequency.setTargetAtTime(200 + 640*x, t, 0.05);
+}
+
+function beep(freq=640, dur=0.14, amp=0.12){
+  if (!audio || !soundToggle?.checked) return;
+  const t = audio.ctx.currentTime;
+  const o = audio.ctx.createOscillator();
+  const g = audio.ctx.createGain();
+  o.type = 'sine';
+  o.frequency.setValueAtTime(freq, t);
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(amp, t+0.02);
+  g.gain.exponentialRampToValueAtTime(0.0001, t+dur);
+  o.connect(g); g.connect(audio.master);
+  o.start(t); o.stop(t+dur+0.02);
+}
+
+// ----- World -----
+
+const world = {
+  seed: 0,
+  rnd: mulberry32(1),
+
+  t: 0,
+  running: false,
+  score: 0,
+  visited: new Set(),
+  stars: [],
+  parts: [],
+
+  ship: { x:0, y:0, vx:0, vy:0, fuel: 1, landed: false, landPlanet: null },
+
+  cam: { x:0, y:0, z:1, vx:0, vy:0 },
+
+  planets: [],
+  bgStars: [],
 };
 
-function showOverlay(mode){
-  overlay.style.display='flex';
-  if(mode==='start'){
-    document.getElementById('title').textContent='Orbit Hop';
-    document.getElementById('desc').innerHTML=`Collect <b>${s.goal} stars</b>. Hold to thrust outward.`;
-    startBtn.textContent='Start';
-    lastEl.textContent = lastTime==null ? '—' : `${lastHit} • ${fmt(lastTime)}`;
-    lastSEl.textContent = lastStars==null ? '—' : `${lastStars}`;
-  }else if(mode==='gameover'){
-    document.getElementById('title').textContent='Crashed 💥';
-    document.getElementById('desc').innerHTML=`You hit <b>${lastHit}</b>. Try boosting near periapsis instead of spamming.`;
-    startBtn.textContent='Try again';
-    lastEl.textContent=`${lastHit} • ${fmt(lastTime??0)}`;
-    lastSEl.textContent=`${lastStars??0}`;
-  }else if(mode==='win'){
-    document.getElementById('title').textContent='Objective complete ✅';
-    document.getElementById('desc').innerHTML=`You collected <b>${s.goal} stars</b>! Keep going for a higher score.`;
-    startBtn.textContent='Keep going';
-  }
-  bestSEl.textContent=bestStars;
-  bestTEl.textContent=fmt(bestTime);
-}
-function hideOverlay(){ overlay.style.display='none'; }
+const TUNE = {
+  G: 22000,          // gravity constant (scaled)
+  soft: 120,         // softening
+  thrust: 760,       // accel per sec^2
+  maxSpeed: 1900,
+  drag: 0.010,       // space "stabilizer" (tiny)
+  atmoDrag: 0.35,    // inside atmosphere ring
+  fuelBurn: 0.11,
+  fuelRegen: 0.05,
+  starRadius: 18,
+  landSpeed: 320,    // must be slower than this to "visit"
+  landPad: 10,       // distance from surface
+  outRescue: 5200,   // pull you back if too far
+  zoomMin: 0.40,
+  zoomMax: 1.0,
+};
 
-function reset(){
-  s.rng = makeRng();
-  s.cx=W/2; s.cy=H/2+10;
-  const scale=Math.min(W,H);
-  s.planetR=Math.max(90, scale*0.18);
-  s.atmR=s.planetR+Math.max(45, scale*0.08);
-
-  const r0=s.atmR+Math.max(60, scale*0.10);
-  s.x=s.cx+r0; s.y=s.cy;
-  const v=Math.sqrt(s.mu/r0);
-  s.vx=0; s.vy=-v;
-
-  s.stars.length=0; s.debris.length=0; s.parts.length=0;
-  s.got=0; s.flash=0;
-  for(let i=0;i<6;i++) spawnStar();
-}
-
-function spawnStar(){
-  const scale=Math.min(W,H);
-  const r=s.atmR + scale*0.10 + s.rng()*(scale*0.18);
-  const a=s.rng()*Math.PI*2;
-  s.stars.push({x:s.cx+Math.cos(a)*r, y:s.cy+Math.sin(a)*r, r:7+s.rng()*5, p:s.rng()*10});
-}
-function spawnDebris(){
-  const scale=Math.min(W,H);
-  const r=s.atmR + scale*0.12 + s.rng()*(scale*0.26);
-  const a=s.rng()*Math.PI*2;
-  const x=s.cx+Math.cos(a)*r, y=s.cy+Math.sin(a)*r;
-  const speed=120+s.rng()*160;
-  const tx=-Math.sin(a), ty=Math.cos(a);
-  const dir=s.rng()<0.5?-1:1;
-  s.debris.push({x,y,vx:tx*speed*dir,vy:ty*speed*dir,r:9+s.rng()*10,life:8+s.rng()*6});
-}
-function addParts(x,y,n=18){
-  for(let i=0;i<n;i++){
-    const a=s.rng()*Math.PI*2, sp=80+s.rng()*220;
-    s.parts.push({x,y,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp,life:0.35+s.rng()*0.25,r:2+s.rng()*3});
+function makeStarfield(){
+  const rnd = mulberry32(9001 + W*3 + H*5);
+  world.bgStars.length = 0;
+  const n = Math.floor((W*H)/4200);
+  for (let i=0;i<n;i++){
+    world.bgStars.push({
+      x: rnd()*W, y: rnd()*H,
+      z: 0.2 + rnd()*0.8,
+      s: 0.6 + rnd()*1.8,
+      tw: rnd()*Math.PI*2,
+    });
   }
 }
 
-function start(){
-  resize(); reset();
-  if(soundToggle.checked){ const a=ensureAudio(); if(a && a.state==='suspended') a.resume?.(); }
-  running=true; hideOverlay();
-  tStart=performance.now(); tLast=tStart;
-  requestAnimationFrame(frame);
+function resetWorld(hard=false){
+  world.t = 0;
+  world.score = 0;
+  world.visited = new Set();
+  world.stars.length = 0;
+  world.parts.length = 0;
+
+  // Seed
+  world.seed = dailyToggle?.checked ? dailySeed() : (Math.random()*1e9)>>>0;
+  world.rnd = mulberry32(world.seed);
+
+  modeLabel.textContent = dailyToggle?.checked ? 'daily' : 'free';
+  seedLabel.textContent = String(world.seed);
+
+  // Planets (positions in world coords)
+  const rnd = world.rnd;
+  world.planets = [
+    { id:'A', x:0, y:0, r: 220, mass: 8.0, c:'#1f3b5f', ring:'#2b6cb0' },
+    { id:'B', x: 1400 + rnd()*600, y: -900 + rnd()*600, r: 140, mass: 4.5, c:'#224f3f', ring:'#34d399' },
+    { id:'C', x: -1600 - rnd()*700, y: 1100 + rnd()*700, r: 160, mass: 5.2, c:'#4a2b52', ring:'#a855f7' },
+  ];
+
+  // Ship starts in a stable-ish orbit around planet A
+  const a = rnd()*Math.PI*2;
+  const R = 520;
+  world.ship.x = Math.cos(a)*R;
+  world.ship.y = Math.sin(a)*R;
+  world.ship.vx = -Math.sin(a)*520;
+  world.ship.vy =  Math.cos(a)*520;
+  world.ship.fuel = 1;
+  world.ship.landed = false;
+  world.ship.landPlanet = null;
+
+  // Stars sprinkled around planets
+  const starN = 14;
+  for (let i=0;i<starN;i++){
+    const p = world.planets[i % world.planets.length];
+    const ang = rnd()*Math.PI*2;
+    const rad = p.r*2.2 + rnd()*560;
+    world.stars.push({
+      x: p.x + Math.cos(ang)*rad,
+      y: p.y + Math.sin(ang)*rad,
+      alive: true,
+      spin: rnd()*Math.PI*2,
+    });
+  }
+
+  // Camera
+  world.cam.x = world.ship.x;
+  world.cam.y = world.ship.y;
+  world.cam.vx = 0; world.cam.vy = 0;
+  world.cam.z = 0.9;
+
+  if (hard){
+    bestScore = 0;
+    localStorage.setItem(STORAGE_KEY, '0');
+    bestEl.textContent = '0';
+  }
 }
-function endRun(reason){
-  running=false;
-  lastTime=(tNow-tStart)/1000;
-  lastStars=s.got;
-  lastHit=reason;
 
-  if(lastStars>bestStars){ bestStars=lastStars; localStorage.setItem(STORE.bs,String(bestStars)); }
-  if(lastTime>bestTime){ bestTime=lastTime; localStorage.setItem(STORE.bt,String(bestTime)); }
+function showOverlay(kind){
+  overlay.style.display = 'flex';
+  if (kind === 'start'){
+    overlayTitle.textContent = 'Orbit Hop';
+    overlayText.textContent = 'Hold to thrust forward. Visit planets by landing gently. Collect stars. Gravity is your steering wheel.';
+    startBtn.textContent = 'Start';
+  } else if (kind === 'gameover'){
+    overlayTitle.textContent = 'Lost in space 😵‍💫';
+    overlayText.textContent = 'You drifted too far. Short bursts + gravity turns are the move. Try again.';
+    startBtn.textContent = 'Try again';
+  } else if (kind === 'pause'){
+    overlayTitle.textContent = 'Paused';
+    overlayText.textContent = 'Press Start to resume.';
+    startBtn.textContent = 'Resume';
+  }
+}
 
-  beep(140,0.12,0.04);
+function hideOverlay(){ overlay.style.display = 'none'; }
+
+function gameOver(){
+  world.running = false;
+  lastEl.textContent = String(Math.floor(world.score));
+  if (Math.floor(world.score) > bestScore){
+    bestScore = Math.floor(world.score);
+    localStorage.setItem(STORAGE_KEY, String(bestScore));
+    bestEl.textContent = String(bestScore);
+  }
+  beep(180, 0.22, 0.16);
   showOverlay('gameover');
 }
 
-function update(dt){
-  const t=(tNow-tStart)/1000;
-  const dx=s.x-s.cx, dy=s.y-s.cy;
-  const r=len(dx,dy)+1e-6;
-  const ux=dx/r, uy=dy/r;
-
-  // gravity
-  const g=s.mu/(r*r);
-  s.vx += (-ux*g)*dt;
-  s.vy += (-uy*g)*dt;
-
-  // thrust outward
-  if(hold){
-    s.vx += (ux*s.boost)*dt;
-    s.vy += (uy*s.boost)*dt;
-    if(Math.random()<dt*25){
-      s.parts.push({x:s.x-ux*8,y:s.y-uy*8,vx:-ux*(90+s.rng()*60)+(s.rng()-0.5)*40,vy:-uy*(90+s.rng()*60)+(s.rng()-0.5)*40,life:0.18+s.rng()*0.18,r:1.6+s.rng()*2.2});
-    }
-  }
-
-  s.vx *= (1-s.drag); s.vy *= (1-s.drag);
-  s.x += s.vx*dt; s.y += s.vy*dt;
-
-  if(r < s.atmR){ addParts(s.x,s.y,28); endRun('atmosphere'); return; }
-
-  // spawn pacing
-  const debrisRate = 0.18 + Math.min(0.55, t/45)*0.55;
-  if(s.debris.length<10 && s.rng()<dt*debrisRate) spawnDebris();
-  if(s.stars.length<8 && s.rng()<dt*0.22) spawnStar();
-
-  // debris update/collision
-  for(let i=s.debris.length-1;i>=0;i--){
-    const d=s.debris[i];
-    d.life-=dt; d.x+=d.vx*dt; d.y+=d.vy*dt;
-    if(len(d.x-s.x,d.y-s.y) < d.r+10){ addParts(s.x,s.y,34); endRun('debris'); return; }
-    if(d.life<=0) s.debris.splice(i,1);
-  }
-
-  // stars collect
-  for(let i=s.stars.length-1;i>=0;i--){
-    const st=s.stars[i];
-    st.p += dt*4;
-    if(len(st.x-s.x, st.y-s.y) < st.r+10){
-      s.stars.splice(i,1);
-      s.got++; s.flash=0.18;
-      beep(760,0.05,0.03);
-      if(s.got===s.goal) showOverlay('win');
-    }
-  }
-
-  // particles
-  for(let i=s.parts.length-1;i>=0;i--){
-    const p=s.parts[i];
-    p.life-=dt; p.x+=p.vx*dt; p.y+=p.vy*dt;
-    p.vx*=Math.exp(-dt*5.5); p.vy*=Math.exp(-dt*5.5);
-    p.r *=Math.exp(-dt*6.2);
-    if(p.life<=0||p.r<0.3) s.parts.splice(i,1);
-  }
-  s.flash *= Math.exp(-dt*5.0);
+function startGame(){
+  ensureAudio();
+  resetWorld(false);
+  world.running = true;
+  hideOverlay();
+  lastFrame = now();
+  requestAnimationFrame(frame);
 }
 
-function drawStar(x,y,r1,r2){
-  ctx.save(); ctx.translate(x,y);
-  ctx.fillStyle='rgba(52,211,153,.85)';
-  ctx.beginPath();
-  const spikes=5;
-  for(let i=0;i<spikes*2;i++){
-    const rr=(i%2===0)?r1:r2;
-    const a=(i/(spikes*2))*Math.PI*2 - Math.PI/2;
-    ctx.lineTo(Math.cos(a)*rr, Math.sin(a)*rr);
-  }
-  ctx.closePath(); ctx.fill();
-  ctx.restore();
-}
-function drawShip(x,y,vx,vy){
-  const a=Math.atan2(vy,vx);
-  ctx.save(); ctx.translate(x,y); ctx.rotate(a);
-  ctx.fillStyle='rgba(229,231,235,.92)';
-  ctx.beginPath(); ctx.moveTo(12,0); ctx.lineTo(-10,-7); ctx.lineTo(-6,0); ctx.lineTo(-10,7); ctx.closePath(); ctx.fill();
-  ctx.fillStyle='rgba(96,165,250,.55)'; ctx.beginPath(); ctx.arc(0,0,3.5,0,Math.PI*2); ctx.fill();
-  if(hold){
-    ctx.fillStyle='rgba(52,211,153,.80)';
-    ctx.beginPath(); ctx.moveTo(-6,0); ctx.lineTo(-14,-3); ctx.lineTo(-14,3); ctx.closePath(); ctx.fill();
-  }
-  ctx.restore();
+// ----- Input -----
+let thrusting = false;
+
+function setThrust(on){
+  thrusting = on;
+  if (on) ensureAudio();
 }
 
-function draw(){
-  ctx.fillStyle='#060a12'; ctx.fillRect(0,0,W,H);
-  ctx.globalAlpha=0.75; ctx.fillStyle='rgba(255,255,255,.08)';
-  for(let i=0;i<90;i++){
-    const x=(i*97)%W, y=(i*193)%H, ssz=1+((i*31)%2);
-    ctx.fillRect(x,y,ssz,ssz);
-  }
-  ctx.globalAlpha=1;
+canvas.addEventListener('pointerdown', (e)=>{ e.preventDefault(); setThrust(true); });
+window.addEventListener('pointerup', (e)=>{ setThrust(false); });
 
-  // planet + atmosphere
-  ctx.fillStyle='rgba(96,165,250,.10)'; ctx.beginPath(); ctx.arc(s.cx,s.cy,s.atmR,0,Math.PI*2); ctx.fill();
-  ctx.fillStyle='rgba(96,165,250,.16)'; ctx.beginPath(); ctx.arc(s.cx,s.cy,s.planetR,0,Math.PI*2); ctx.fill();
-  ctx.fillStyle='rgba(0,0,0,.20)'; ctx.beginPath(); ctx.arc(s.cx+s.planetR*0.25, s.cy+s.planetR*0.18, s.planetR*0.90, 0, Math.PI*2); ctx.fill();
-
-  // debris
-  ctx.strokeStyle='rgba(251,113,133,.75)'; ctx.lineWidth=2;
-  for(const d of s.debris){ ctx.beginPath(); ctx.arc(d.x,d.y,d.r,0,Math.PI*2); ctx.stroke(); }
-
-  // stars
-  for(const st of s.stars){
-    const p=0.65+0.35*Math.sin(st.p);
-    drawStar(st.x, st.y, st.r*p, st.r*0.55*p);
-  }
-
-  // particles
-  ctx.globalCompositeOperation='lighter';
-  for(const p of s.parts){
-    ctx.globalAlpha=clamp(p.life/0.45,0,1);
-    ctx.fillStyle='rgba(52,211,153,.55)';
-    ctx.beginPath(); ctx.arc(p.x,p.y,p.r,0,Math.PI*2); ctx.fill();
-  }
-  ctx.globalAlpha=1; ctx.globalCompositeOperation='source-over';
-
-  // ship
-  drawShip(s.x,s.y,s.vx,s.vy);
-
-  // flash on collect
-  if(s.flash>0.01){ ctx.fillStyle=`rgba(52,211,153,${s.flash*0.45})`; ctx.fillRect(0,0,W,H); }
-
-  // hud
-  const t = running ? (tNow-tStart)/1000 : 0;
-  ctx.fillStyle='rgba(255,255,255,.90)'; ctx.font='12px ui-monospace, Menlo, Consolas, monospace';
-  ctx.fillText(`stars ${s.got}/${s.goal}   time ${fmt(t)}   mode ${dailyToggle.checked?'daily':'free'}`, 14, 20);
-  ctx.fillStyle='rgba(163,163,163,.95)';
-  ctx.fillText(`${hold?'BOOSTING':'coast'} (hold click/touch/space)`, 14, 38);
-}
-
-function frame(now){
-  tNow=now;
-  const dt=clamp((now-tLast)/1000,0,0.033);
-  tLast=now;
-  if(running) update(dt);
-  draw();
-  if(running) requestAnimationFrame(frame);
-}
-
-// inputs
-function setHold(v){ hold=v; }
-window.addEventListener('keydown',e=>{ if(e.repeat) return; if(e.key===' '||e.key==='Spacebar') setHold(true); if(e.key==='r'||e.key==='R'){ if(!running) start(); }});
-window.addEventListener('keyup',e=>{ if(e.key===' '||e.key==='Spacebar') setHold(false); });
-wrap.addEventListener('pointerdown',e=>{ if(overlay.style.display!=='none') return; e.preventDefault(); setHold(true); });
-wrap.addEventListener('pointerup',e=>{ e.preventDefault(); setHold(false); });
-wrap.addEventListener('pointercancel',()=>setHold(false));
-wrap.addEventListener('pointerleave',()=>setHold(false));
-
-// share/reset/start
-shareBtn.addEventListener('click',()=>{
-  const msg=`🪐 Orbit Hop\nStars: ${lastStars??0}  Time: ${fmt(lastTime??0)}\nMode: ${dailyToggle.checked?'Daily':'Free'}\nPlay: ${location.href}`;
-  navigator.clipboard?.writeText(msg).catch(()=>{});
-  beep(880,0.07,0.03);
+window.addEventListener('keydown', (e)=>{
+  if (e.code === 'Space'){ if (!world.running) startGame(); setThrust(true); }
 });
-resetBtn.addEventListener('click',()=>{
-  localStorage.removeItem(STORE.bs); localStorage.removeItem(STORE.bt);
-  bestStars=0; bestTime=0;
-  bestSEl.textContent=bestStars; bestTEl.textContent=fmt(bestTime);
-  beep(240,0.08,0.03);
+window.addEventListener('keyup', (e)=>{ if (e.code === 'Space') setThrust(false); });
+
+// Buttons
+startBtn.addEventListener('click', ()=>{
+  if (!world.running) startGame();
+  else { world.running = false; showOverlay('pause'); }
+});
+resetBtn.addEventListener('click', ()=>{
+  resetWorld(true);
   showOverlay('start');
 });
-startBtn.addEventListener('click',()=>{
-  if(!running) start(); else hideOverlay();
+shareBtn.addEventListener('click', async ()=>{
+  const url = location.href;
+  const text = `🪐 Orbit Hop\nBest score: ${bestEl.textContent}\n${url}`;
+  try{
+    if (navigator.share) await navigator.share({ title:'Orbit Hop', text, url });
+    else {
+      await navigator.clipboard.writeText(text);
+      shareBtn.textContent = 'Copied!';
+      setTimeout(()=> shareBtn.textContent='Share', 900);
+    }
+  }catch{}
 });
 
+dailyToggle?.addEventListener('change', ()=>{
+  // reflect in overlay labels
+  modeLabel.textContent = dailyToggle.checked ? 'daily' : 'free';
+});
+
+// ----- Physics helpers -----
+function nearestPlanet(x,y){
+  let best = null;
+  let bestD = Infinity;
+  for (const p of world.planets){
+    const d = len(x-p.x, y-p.y) - p.r;
+    if (d < bestD){ bestD = d; best = p; }
+  }
+  return { p: best, d: bestD };
+}
+
+function gravAccel(x,y){
+  let ax=0, ay=0;
+  for (const p of world.planets){
+    const dx = p.x - x;
+    const dy = p.y - y;
+    const r2 = dx*dx + dy*dy + TUNE.soft*TUNE.soft;
+    const r = Math.sqrt(r2);
+    const a = (TUNE.G * p.mass) / r2;
+    ax += a * (dx / r);
+    ay += a * (dy / r);
+  }
+  return [ax, ay];
+}
+
+function spawnTrail(){
+  const s = world.ship;
+  world.parts.push({
+    x: s.x, y: s.y,
+    vx: -s.vx*0.08, vy: -s.vy*0.08,
+    life: 0.45 + world.rnd()*0.35,
+    r: 2 + world.rnd()*3,
+  });
+}
+
+function stepParticles(dt){
+  for (let i=world.parts.length-1;i>=0;i--){
+    const p = world.parts[i];
+    p.life -= dt;
+    p.x += p.vx*dt;
+    p.y += p.vy*dt;
+    p.vx *= 0.98; p.vy *= 0.98;
+    if (p.life <= 0) world.parts.splice(i,1);
+  }
+}
+
+// ----- Render -----
+function drawBackground(t){
+  const g = ctx.createLinearGradient(0,0,W,H);
+  g.addColorStop(0,'#05070d');
+  g.addColorStop(0.5,'#090f1f');
+  g.addColorStop(1,'#05070f');
+  ctx.fillStyle = g;
+  ctx.fillRect(0,0,W,H);
+
+  // nebulas (screen space)
+  const neb = [
+    {x: W*0.25, y: H*0.20, r: Math.min(W,H)*0.55, c:'rgba(96,165,250,.10)'},
+    {x: W*0.80, y: H*0.30, r: Math.min(W,H)*0.62, c:'rgba(52,211,153,.08)'},
+    {x: W*0.65, y: H*0.80, r: Math.min(W,H)*0.75, c:'rgba(168,85,247,.08)'},
+  ];
+  for (const n of neb){
+    const x = n.x + Math.sin(t*0.12)*18;
+    const y = n.y + Math.cos(t*0.10)*14;
+    const gr = ctx.createRadialGradient(x,y,0,x,y,n.r);
+    gr.addColorStop(0, n.c);
+    gr.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = gr;
+    ctx.fillRect(0,0,W,H);
+  }
+
+  // stars with parallax based on camera
+  const px = world.cam.x*0.002;
+  const py = world.cam.y*0.002;
+  for (const s of world.bgStars){
+    const tw = 0.6 + 0.4*Math.sin(s.tw + t*0.9);
+    const x = (s.x - px*s.z*W + t*10*s.z) % W;
+    const y = (s.y - py*s.z*H + t*3*s.z) % H;
+    ctx.fillStyle = `rgba(255,255,255,${0.55*tw})`;
+    ctx.fillRect((x+W)%W, (y+H)%H, s.s, s.s);
+  }
+}
+
+function drawPlanet(p){
+  // planet body
+  ctx.fillStyle = p.c;
+  ctx.beginPath();
+  ctx.arc(p.x, p.y, p.r, 0, Math.PI*2);
+  ctx.fill();
+
+  // subtle terminator
+  const gr = ctx.createRadialGradient(p.x - p.r*0.3, p.y - p.r*0.3, p.r*0.3, p.x, p.y, p.r);
+  gr.addColorStop(0,'rgba(255,255,255,.10)');
+  gr.addColorStop(0.6,'rgba(0,0,0,0)');
+  gr.addColorStop(1,'rgba(0,0,0,.25)');
+  ctx.fillStyle = gr;
+  ctx.beginPath();
+  ctx.arc(p.x, p.y, p.r, 0, Math.PI*2);
+  ctx.fill();
+
+  // atmosphere ring
+  ctx.strokeStyle = 'rgba(251,113,133,.20)';
+  ctx.lineWidth = 12;
+  ctx.beginPath();
+  ctx.arc(p.x, p.y, p.r*1.45, 0, Math.PI*2);
+  ctx.stroke();
+
+  // orbit hint ring
+  ctx.strokeStyle = 'rgba(255,255,255,.06)';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.arc(p.x, p.y, p.r*2.4, 0, Math.PI*2);
+  ctx.stroke();
+
+  // marker
+  ctx.fillStyle = 'rgba(255,255,255,.75)';
+  ctx.font = '12px ui-monospace, Menlo, monospace';
+  ctx.fillText(p.id, p.x - 4, p.y + 4);
+}
+
+function drawStar(st){
+  st.spin += 0.02;
+  const r = 10;
+  const a = st.spin;
+  ctx.save();
+  ctx.translate(st.x, st.y);
+  ctx.rotate(a);
+  ctx.fillStyle = 'rgba(52,211,153,.85)';
+  ctx.beginPath();
+  for (let i=0;i<5;i++){
+    const ang = i*2*Math.PI/5;
+    const ox = Math.cos(ang)*r;
+    const oy = Math.sin(ang)*r;
+    ctx.lineTo(ox, oy);
+    const ang2 = ang + Math.PI/5;
+    ctx.lineTo(Math.cos(ang2)*r*0.45, Math.sin(ang2)*r*0.45);
+  }
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawShip(){
+  const s = world.ship;
+  const speed = len(s.vx,s.vy);
+  const [dx,dy] = speed > 2 ? norm(s.vx,s.vy) : norm(s.x - world.planets[0].x, s.y - world.planets[0].y);
+  const ang = Math.atan2(dy,dx);
+
+  ctx.save();
+  ctx.translate(s.x, s.y);
+  ctx.rotate(ang);
+
+  // shadow glow
+  ctx.globalAlpha = 0.12;
+  ctx.fillStyle = '#60a5fa';
+  ctx.beginPath();
+  ctx.arc(0,0, 18, 0, Math.PI*2);
+  ctx.fill();
+  ctx.globalAlpha = 1;
+
+  // body
+  const body = ctx.createLinearGradient(-18,-6,18,6);
+  body.addColorStop(0,'rgba(255,255,255,.92)');
+  body.addColorStop(1,'rgba(210,220,240,.86)');
+  ctx.fillStyle = body;
+  roundRect(-14, -6, 28, 12, 6);
+  ctx.fill();
+
+  // nose
+  ctx.fillStyle = 'rgba(255,255,255,.92)';
+  ctx.beginPath();
+  ctx.moveTo(18, 0);
+  ctx.lineTo(8, -7);
+  ctx.lineTo(8, 7);
+  ctx.closePath();
+  ctx.fill();
+
+  // fin
+  ctx.fillStyle = 'rgba(251,113,133,.85)';
+  ctx.beginPath();
+  ctx.moveTo(-10, 0);
+  ctx.lineTo(-20, -9);
+  ctx.lineTo(-16, 0);
+  ctx.closePath();
+  ctx.fill();
+
+  // window
+  ctx.fillStyle = 'rgba(96,165,250,.35)';
+  ctx.beginPath(); ctx.arc(2,0,3.4,0,Math.PI*2); ctx.fill();
+
+  // flame if thrusting
+  if (thrusting && s.fuel > 0.01 && !s.landed){
+    const f = ctx.createRadialGradient(-18,0,0,-18,0,18);
+    f.addColorStop(0,'rgba(255,255,255,.90)');
+    f.addColorStop(0.4,'rgba(96,165,250,.70)');
+    f.addColorStop(1,'rgba(96,165,250,0)');
+    ctx.fillStyle = f;
+    ctx.beginPath();
+    ctx.moveTo(-14,-4);
+    ctx.quadraticCurveTo(-30,0,-14,4);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  ctx.restore();
+}
+
+function roundRect(x,y,w,h,r){
+  const rr = Math.min(r, w/2, h/2);
+  ctx.beginPath();
+  ctx.moveTo(x+rr,y);
+  ctx.arcTo(x+w,y,x+w,y+h,rr);
+  ctx.arcTo(x+w,y+h,x,y+h,rr);
+  ctx.arcTo(x,y+h,x,y,rr);
+  ctx.arcTo(x,y,x+w,y,rr);
+  ctx.closePath();
+}
+
+function drawHUD(){
+  const s = world.ship;
+  const aliveStars = world.stars.filter(st=>st.alive).length;
+  const visited = world.visited.size;
+
+  ctx.save();
+  ctx.font = '12px ui-monospace, SFMono-Regular, Menlo, monospace';
+  ctx.fillStyle = 'rgba(255,255,255,.85)';
+  ctx.fillText(`score ${Math.floor(world.score)}   visited ${visited}/3   stars ${14-aliveStars}/14`, 16, 22);
+
+  // fuel bar
+  const x=16,y=34,w=220,h=10;
+  ctx.fillStyle = 'rgba(255,255,255,.12)';
+  roundRect(x,y,w,h,6); ctx.fill();
+  ctx.fillStyle = 'rgba(96,165,250,.55)';
+  roundRect(x,y,w*s.fuel,h,6); ctx.fill();
+  ctx.fillStyle = 'rgba(255,255,255,.45)';
+  ctx.fillText('fuel', x+w+10, y+9);
+
+  // tip line
+  const np = nearestPlanet(s.x,s.y);
+  ctx.fillStyle = 'rgba(255,255,255,.60)';
+  const d = Math.max(0, Math.floor(np.d));
+  ctx.fillText(`nearest ${np.p.id}   dist ${d}   ${s.landed ? 'LANDED (hold to launch)' : ''}`, 16, 54);
+
+  ctx.restore();
+}
+
+// ----- Loop -----
+let lastFrame = now();
+
+function update(dt){
+  world.t += dt;
+  const s = world.ship;
+
+  // thrust & fuel
+  let eng = 0;
+
+  if (!s.landed && thrusting && s.fuel > 0.01){
+    const speed = len(s.vx,s.vy);
+    let tx=0, ty=0;
+    if (speed > 35){
+      [tx,ty] = norm(s.vx,s.vy); // prograde
+    } else {
+      // if nearly stopped, thrust away from nearest planet
+      const np = nearestPlanet(s.x,s.y);
+      [tx,ty] = norm(s.x - np.p.x, s.y - np.p.y);
+    }
+    s.vx += tx*TUNE.thrust*dt;
+    s.vy += ty*TUNE.thrust*dt;
+
+    s.fuel = clamp(s.fuel - TUNE.fuelBurn*dt, 0, 1);
+    eng = 1;
+    spawnTrail();
+  } else {
+    s.fuel = clamp(s.fuel + TUNE.fuelRegen*dt, 0, 1);
+  }
+
+  setEngine(eng);
+
+  // gravity
+  if (!s.landed){
+    const [ax,ay] = gravAccel(s.x,s.y);
+    s.vx += ax*dt;
+    s.vy += ay*dt;
+  }
+
+  // drag (tiny stabilizer, bigger in atmosphere)
+  let drag = TUNE.drag;
+  for (const p of world.planets){
+    const d = len(s.x-p.x, s.y-p.y);
+    if (d < p.r*1.45){
+      drag = Math.max(drag, TUNE.atmoDrag);
+      // hot atmosphere drains fuel a bit (forces decisions)
+      s.fuel = clamp(s.fuel - 0.04*dt, 0, 1);
+    }
+  }
+  const sp = len(s.vx,s.vy);
+  if (!s.landed){
+    s.vx *= Math.exp(-drag*dt);
+    s.vy *= Math.exp(-drag*dt);
+  }
+
+  // cap speed
+  const sp2 = len2(s.vx,s.vy);
+  if (sp2 > TUNE.maxSpeed*TUNE.maxSpeed){
+    const k = TUNE.maxSpeed / Math.sqrt(sp2);
+    s.vx *= k; s.vy *= k;
+  }
+
+  // integrate
+  if (!s.landed){
+    s.x += s.vx*dt;
+    s.y += s.vy*dt;
+  }
+
+  // landing / visiting
+  if (!s.landed){
+    for (const p of world.planets){
+      const d = len(s.x-p.x, s.y-p.y);
+      if (d < p.r + TUNE.landPad){
+        const speed = len(s.vx,s.vy);
+        if (speed < TUNE.landSpeed){
+          // land!
+          s.landed = true;
+          s.landPlanet = p.id;
+          world.visited.add(p.id);
+          beep(860, 0.10, 0.12);
+          // stick to surface
+          const [nx,ny] = norm(s.x-p.x, s.y-p.y);
+          s.x = p.x + nx*(p.r + TUNE.landPad);
+          s.y = p.y + ny*(p.r + TUNE.landPad);
+          s.vx = 0; s.vy = 0;
+          // reward
+          world.score += 250;
+          s.fuel = clamp(s.fuel + 0.35, 0, 1);
+          break;
+        } else {
+          // too fast -> bounce
+          const [nx,ny] = norm(s.x-p.x, s.y-p.y);
+          const vn = s.vx*nx + s.vy*ny;
+          if (vn < 0){
+            s.vx -= 1.8*vn*nx;
+            s.vy -= 1.8*vn*ny;
+            beep(220, 0.08, 0.07);
+          }
+        }
+      }
+    }
+  } else {
+    // landed: allow launch by holding thrust
+    if (thrusting && s.fuel > 0.01){
+      s.landed = false;
+      const p = world.planets.find(pp=>pp.id===s.landPlanet) || world.planets[0];
+      const [nx,ny] = norm(s.x - p.x, s.y - p.y);
+      s.vx = nx*420;
+      s.vy = ny*420;
+      s.fuel = clamp(s.fuel - 0.08, 0, 1);
+      s.landPlanet = null;
+      beep(520, 0.12, 0.10);
+    }
+  }
+
+  // collect stars
+  for (const st of world.stars){
+    if (!st.alive) continue;
+    const d = len(s.x-st.x, s.y-st.y);
+    if (d < TUNE.starRadius){
+      st.alive = false;
+      world.score += 120;
+      beep(880, 0.10, 0.11);
+      s.fuel = clamp(s.fuel + 0.12, 0, 1);
+    }
+  }
+
+  // scoring over time (survival)
+  world.score += 22*dt + 0.02*sp*dt;
+
+  // lose condition: drift too far from everything
+  const np = nearestPlanet(s.x,s.y);
+  if (np.d > TUNE.outRescue){
+    gameOver();
+  }
+
+  stepParticles(dt);
+
+  // camera follow with smoothing + dynamic zoom
+  const targetX = s.x;
+  const targetY = s.y;
+
+  world.cam.vx = lerp(world.cam.vx, (targetX - world.cam.x)*2.6, 0.05);
+  world.cam.vy = lerp(world.cam.vy, (targetY - world.cam.y)*2.6, 0.05);
+  world.cam.x += world.cam.vx*dt;
+  world.cam.y += world.cam.vy*dt;
+
+  const zoomTarget = clamp(0.92 - sp/3600, TUNE.zoomMin, TUNE.zoomMax);
+  world.cam.z = lerp(world.cam.z, zoomTarget, 0.06);
+}
+
+function lerp(a,b,t){ return a + (b-a)*t; }
+
+function draw(){
+  drawBackground(world.t);
+
+  // world transform
+  ctx.save();
+  ctx.translate(W/2, H/2);
+  ctx.scale(world.cam.z, world.cam.z);
+  ctx.translate(-world.cam.x, -world.cam.y);
+
+  // planets
+  for (const p of world.planets) drawPlanet(p);
+
+  // stars
+  for (const st of world.stars){
+    if (st.alive) drawStar(st);
+  }
+
+  // particles
+  ctx.globalCompositeOperation = 'lighter';
+  for (const p of world.parts){
+    const a = clamp(p.life/0.8, 0, 1);
+    ctx.globalAlpha = 0.75*a;
+    ctx.fillStyle = 'rgba(96,165,250,.55)';
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.r, 0, Math.PI*2);
+    ctx.fill();
+  }
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.globalAlpha = 1;
+
+  // ship
+  drawShip();
+
+  ctx.restore();
+
+  // HUD in screen space
+  drawHUD();
+}
+
+function frame(){
+  const t = now();
+  const dt = clamp((t - lastFrame)/1000, 0, 0.033);
+  lastFrame = t;
+
+  if (world.running){
+    update(dt);
+    draw();
+    if (world.running) requestAnimationFrame(frame);
+  } else {
+    draw();
+  }
+}
+
+// init
 resize();
+resetWorld(false);
 showOverlay('start');
+draw();
+
+soundToggle?.addEventListener('change', ()=>{
+  if (!soundToggle.checked){
+    if (audio?.master){
+      try{ audio.master.gain.value = 0; }catch{}
+    }
+  } else {
+    ensureAudio();
+  }
+});

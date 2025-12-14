@@ -1,427 +1,817 @@
-const c = document.getElementById('c');
-const ctx = c.getContext('2d', { alpha:false });
+// Balance the Rocket — arcade-y attitude control
+// No deps. Works on GitHub Pages.
 
-const wrap = document.getElementById('wrap');
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d', { alpha: false });
+
 const overlay = document.getElementById('overlay');
-const titleEl = document.getElementById('title');
-const descEl = document.getElementById('desc');
+const overlayTitle = document.getElementById('overlayTitle');
+const overlayText  = document.getElementById('overlayText');
 
-const bestTEl = document.getElementById('bestT');
-const bestSEl = document.getElementById('bestS');
-const lastTEl = document.getElementById('lastT');
-const lastSEl = document.getElementById('lastS');
+const startBtn = document.getElementById('startBtn');
+const shareBtn = document.getElementById('shareBtn');
+const resetBtn = document.getElementById('resetBtn');
 
-const startBtn = document.getElementById('start');
-const shareBtn = document.getElementById('share');
-const resetBtn = document.getElementById('reset');
+const bestEl = document.getElementById('best');
+const lastEl = document.getElementById('last');
+const bestScoreEl = document.getElementById('bestScore');
+const lastScoreEl = document.getElementById('lastScore');
 
-const soundToggle = document.getElementById('sound');
-const easyToggle = document.getElementById('easy');
+const leftBtn = document.getElementById('leftBtn');
+const rightBtn = document.getElementById('rightBtn');
 
-const Lbtn = document.getElementById('L');
-const Rbtn = document.getElementById('R');
+const soundToggle = document.getElementById('soundToggle');
+const easyToggle  = document.getElementById('easyToggle');
 
-const STORE = {
-  bt:'ra.balance.bestT', bs:'ra.balance.bestS',
-  snd:'ra.balance.snd', ez:'ra.balance.ez'
-};
+let W = 0, H = 0, DPR = 1;
 
-const clamp=(x,a,b)=>Math.max(a,Math.min(b,x));
-const lerp=(a,b,t)=>a+(b-a)*t;
-const fmt=t=>`${t.toFixed(1)}s`;
-
-let dpr=1,W=0,H=0;
 function resize(){
-  dpr = Math.max(1, Math.min(2, window.devicePixelRatio||1));
-  const r = c.getBoundingClientRect();
-  W = Math.floor(r.width); H = Math.floor(r.height);
-  c.width = Math.floor(W*dpr); c.height = Math.floor(H*dpr);
-  ctx.setTransform(dpr,0,0,dpr,0,0);
+  const rect = canvas.getBoundingClientRect();
+  DPR = Math.min(2, window.devicePixelRatio || 1);
+  W = Math.max(320, Math.floor(rect.width));
+  H = Math.max(200, Math.floor(rect.height));
+  canvas.width  = Math.floor(W * DPR);
+  canvas.height = Math.floor(H * DPR);
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+  makeStars();
 }
 window.addEventListener('resize', resize);
 
-// ---- Sound (tiny beeps)
-let ac=null;
-function ensureAudio(){
-  if(ac) return ac;
-  const AC = window.AudioContext||window.webkitAudioContext;
-  if(!AC) return null;
-  ac = new AC(); return ac;
-}
-function beep(f, d=0.06, g=0.03){
-  if(!soundToggle.checked) return;
-  const a = ensureAudio(); if(!a) return;
-  const o=a.createOscillator(), gg=a.createGain();
-  o.type='sine'; o.frequency.value=f; gg.gain.value=g;
-  o.connect(gg); gg.connect(a.destination);
-  o.start(); o.stop(a.currentTime+d);
-}
+const STORAGE_KEY = 'rocketArcade.balance.best.v2';
+const STORAGE_SCORE_KEY = 'rocketArcade.balance.bestScore.v2';
 
-// ---- Persistence
-let bestT = Number(localStorage.getItem(STORE.bt)||'0')||0;
-let bestS = Number(localStorage.getItem(STORE.bs)||'0')||0;
-bestTEl.textContent=fmt(bestT); bestSEl.textContent=Math.floor(bestS);
+let bestTime = parseFloat(localStorage.getItem(STORAGE_KEY) || '0') || 0;
+let bestScore = parseInt(localStorage.getItem(STORAGE_SCORE_KEY) || '0', 10) || 0;
 
-soundToggle.checked = (localStorage.getItem(STORE.snd)||'0')==='1';
-easyToggle.checked  = (localStorage.getItem(STORE.ez )||'0')==='1';
-soundToggle.addEventListener('change',()=>localStorage.setItem(STORE.snd, soundToggle.checked?'1':'0'));
-easyToggle.addEventListener('change',()=>localStorage.setItem(STORE.ez,  easyToggle.checked?'1':'0'));
+function fmt1(x){ return `${x.toFixed(1)}s`; }
+function clamp(x,a,b){ return Math.max(a, Math.min(b, x)); }
+function lerp(a,b,t){ return a + (b-a)*t; }
+function now(){ return performance.now(); }
 
-let lastT=null,lastS=null,lastChecks=null;
+bestEl.textContent = bestTime ? fmt1(bestTime) : '0.0s';
+bestScoreEl.textContent = String(bestScore);
 
-// ---- Input
-let L=false,R=false;
-function holdBtn(btn,setter){
-  const down=e=>{e.preventDefault(); setter(true);};
-  const up  =e=>{e.preventDefault(); setter(false);};
-  btn.addEventListener('pointerdown',down);
-  btn.addEventListener('pointerup',up);
-  btn.addEventListener('pointercancel',up);
-  btn.addEventListener('pointerleave',up);
-}
-holdBtn(Lbtn,v=>L=v);
-holdBtn(Rbtn,v=>R=v);
+const state = {
+  running:false,
+  t:0,
+  score:0,
+  checksDone:0,
+  checksPassed:0,
 
-window.addEventListener('keydown',e=>{
-  if(e.repeat) return;
-  if(e.key==='a'||e.key==='A'||e.key==='ArrowLeft') L=true;
-  if(e.key==='d'||e.key==='D'||e.key==='ArrowRight') R=true;
-  if(e.key===' ' && !running) start();
-});
-window.addEventListener('keyup',e=>{
-  if(e.key==='a'||e.key==='A'||e.key==='ArrowLeft') L=false;
-  if(e.key==='d'||e.key==='D'||e.key==='ArrowRight') R=false;
-});
+  // dynamics
+  x:0,
+  vx:0,
+  ang:0,    // radians, 0 = upright
+  w:0,      // ang vel
 
-wrap.addEventListener('pointerdown',e=>{
-  if(overlay.style.display!=='none') return;
-  const r=wrap.getBoundingClientRect();
-  const x=e.clientX-r.left;
-  if(x<r.width/2) L=true; else R=true;
-});
-wrap.addEventListener('pointerup',()=>{L=false;R=false;});
-wrap.addEventListener('pointercancel',()=>{L=false;R=false;});
-wrap.addEventListener('pointerleave',()=>{L=false;R=false;});
+  // fuel
+  fuel:1, // 0..1
 
-// ---- Game state
-let running=false, tStart=0, tLast=0, tNow=0;
-const s={
-  ang:0, w:0, x:0, vx:0,
-  wind:0, windT:0, windTarget:0, gust:0,
-  fuel:100,
+  // check window
+  checkActive:false,
+  checkT:0,
+  checkHold:0,
+
+  // inputs
+  left:false,
+  right:false,
+
+  // particles
   parts:[],
-  nextCheck:8, checkOn:false, checkStart:0, checkProg:0,
-  wins:0, fails:0
+
+  // background
+  stars:[],
+  neb:[],
 };
 
-function reset(){
-  s.ang=(Math.random()*0.12-0.06); s.w=0; s.x=0; s.vx=0;
-  s.wind=0; s.windT=0; s.windTarget=(Math.random()*2-1)*0.25; s.gust=0;
-  s.fuel=100; s.parts.length=0;
-  s.nextCheck=8; s.checkOn=false; s.checkProg=0;
-  s.wins=0; s.fails=0;
+const TUNE = {
+  maxAng: 0.62,       // ~35deg
+  maxX: 0.42,         // fraction of width
+  baseWind: 0.35,
+  windRamp: 0.08,     // per second
+  windGust: 0.65,
+  windFreq: 0.12,
+
+  torque: 2.4,
+  dampAng: 1.15,
+  dampX: 0.55,
+
+  fuelBurn: 0.16,     // per sec at full thrust
+  fuelRegen: 0.08,    // per sec when coasting
+  fuelBonus: 0.20,
+
+  checkEvery: 10.0,
+  checkLen: 2.2,
+  checkTightAng: 0.20,
+  checkTightX: 0.12,
+
+  scoreTime: 8,       // points per sec
+  scoreCheck: 220,
+  scoreClean: 35,     // bonus for very stable
+};
+
+function isEasy(){
+  return !!easyToggle?.checked;
 }
 
-function showOverlay(mode){
-  overlay.style.display='flex';
-  if(mode==='start'){
-    titleEl.textContent='Balance the Rocket';
-    descEl.innerHTML=`Every ~10 seconds, a <b>stability check</b> appears. Stay inside the green box to pass and refuel.`;
-    startBtn.textContent='Start';
-  }else{
-    titleEl.textContent='Crashed 😵';
-    descEl.innerHTML=`Try smaller, earlier taps. Don’t chase the wobble — damp it.`;
-    startBtn.textContent='Try again';
+function showOverlay(kind){
+  overlay.style.display = 'flex';
+  if (kind === 'start'){
+    overlayTitle.textContent = 'Balance the Rocket';
+    overlayText.textContent = 'Survive the wind — and rack up score by completing stability checks. Small early taps beat big swings.';
+    startBtn.textContent = 'Start';
+  } else if (kind === 'gameover'){
+    overlayTitle.textContent = 'Crashed 😵';
+    overlayText.textContent = 'Try smaller, earlier taps. Don’t chase the wobble — damp it.';
+    startBtn.textContent = 'Try again';
+  } else if (kind === 'pause'){
+    overlayTitle.textContent = 'Paused';
+    overlayText.textContent = 'Press Start to resume.';
+    startBtn.textContent = 'Resume';
   }
-  bestTEl.textContent=fmt(bestT);
-  bestSEl.textContent=Math.floor(bestS);
-  lastTEl.textContent= lastT==null ? '—' : fmt(lastT);
-  lastSEl.textContent= lastS==null ? '—' : Math.floor(lastS);
 }
-function hideOverlay(){ overlay.style.display='none'; }
 
-function start(){
-  resize(); reset();
-  if(soundToggle.checked){ const a=ensureAudio(); if(a && a.state==='suspended') a.resume?.(); }
-  running=true;
-  hideOverlay();
-  tStart=performance.now(); tLast=tStart;
-  requestAnimationFrame(frame);
+function hideOverlay(){
+  overlay.style.display = 'none';
 }
-function end(){
-  running=false;
-  lastT = (tNow - tStart)/1000;
 
-  const timeScore = lastT*10;
-  const objScore  = s.wins*250;
-  const styleScore= clamp((s.fuel/100)*120,0,120);
-  lastS = timeScore + objScore + styleScore;
-  lastChecks = `${s.wins}/${s.wins+s.fails}`;
+function resetRun(hard=false){
+  state.running = false;
+  state.t = 0;
+  state.score = 0;
+  state.checksDone = 0;
+  state.checksPassed = 0;
+  state.x = 0;
+  state.vx = 0;
+  state.ang = 0;
+  state.w = 0;
+  state.fuel = 1;
+  state.checkActive = false;
+  state.checkT = 0;
+  state.checkHold = 0;
+  state.parts.length = 0;
+  state.left = false;
+  state.right = false;
 
-  if(lastT>bestT){ bestT=lastT; localStorage.setItem(STORE.bt,String(bestT)); }
-  if(lastS>bestS){ bestS=lastS; localStorage.setItem(STORE.bs,String(bestS)); }
+  if (hard){
+    bestTime = 0;
+    bestScore = 0;
+    localStorage.setItem(STORAGE_KEY, '0');
+    localStorage.setItem(STORAGE_SCORE_KEY, '0');
+    bestEl.textContent = '0.0s';
+    bestScoreEl.textContent = '0';
+  }
+}
 
-  beep(140,0.12,0.04);
+function crash(){
+  state.running = false;
+  lastEl.textContent = fmt1(state.t);
+  lastScoreEl.textContent = String(Math.floor(state.score));
+  if (state.t > bestTime){
+    bestTime = state.t;
+    localStorage.setItem(STORAGE_KEY, String(bestTime));
+    bestEl.textContent = fmt1(bestTime);
+  }
+  const sc = Math.floor(state.score);
+  if (sc > bestScore){
+    bestScore = sc;
+    localStorage.setItem(STORAGE_SCORE_KEY, String(bestScore));
+    bestScoreEl.textContent = String(bestScore);
+  }
+  audioCrash();
   showOverlay('gameover');
 }
 
-function spawnParticles(side, rx, ry){
-  const n=8;
-  for(let i=0;i<n;i++){
-    const a = s.ang + Math.PI/2 + side*0.2 + (Math.random()-0.5)*0.6;
-    const sp=120+Math.random()*120;
-    s.parts.push({
-      x: rx + side*9 + (Math.random()-0.5)*6,
-      y: ry + 34 + (Math.random()-0.5)*6,
-      vx: Math.cos(a)*sp, vy: Math.sin(a)*sp,
-      life: 0.25+Math.random()*0.25,
-      r: 1.5+Math.random()*2.2
+function startGame(){
+  ensureAudio();
+  resetRun(false);
+  state.running = true;
+  hideOverlay();
+  lastFrame = now();
+  requestAnimationFrame(frame);
+}
+
+startBtn.addEventListener('click', () => {
+  if (!state.running){
+    startGame();
+  } else {
+    // running -> pause
+    state.running = false;
+    showOverlay('pause');
+  }
+});
+
+resetBtn.addEventListener('click', () => {
+  resetRun(true);
+  showOverlay('start');
+});
+
+shareBtn.addEventListener('click', async () => {
+  const url = location.href;
+  const text = `🚀 Balance the Rocket\nBest: ${bestEl.textContent}\nBest score: ${bestScoreEl.textContent}\n${url}`;
+  try{
+    if (navigator.share){
+      await navigator.share({ title:'Balance the Rocket', text, url });
+    } else {
+      await navigator.clipboard.writeText(text);
+      shareBtn.textContent = 'Copied!';
+      setTimeout(()=> shareBtn.textContent='Share', 900);
+    }
+  } catch {}
+});
+
+function setInput(side, on){
+  if (side === 'L') state.left = on;
+  if (side === 'R') state.right = on;
+  if (on) ensureAudio();
+}
+
+function bindHold(btn, side){
+  if (!btn) return;
+  const down = (e)=>{ e.preventDefault(); setInput(side,true); };
+  const up   = (e)=>{ e.preventDefault(); setInput(side,false); };
+
+  btn.addEventListener('pointerdown', down);
+  window.addEventListener('pointerup', up);
+  btn.addEventListener('pointerleave', up);
+}
+bindHold(leftBtn,'L');
+bindHold(rightBtn,'R');
+
+window.addEventListener('keydown', (e)=>{
+  if (e.repeat) return;
+  if (e.code === 'KeyA' || e.code === 'ArrowLeft'){ setInput('L', true); }
+  if (e.code === 'KeyD' || e.code === 'ArrowRight'){ setInput('R', true); }
+  if (e.code === 'Space'){
+    if (!state.running) startGame();
+  }
+});
+window.addEventListener('keyup', (e)=>{
+  if (e.code === 'KeyA' || e.code === 'ArrowLeft'){ setInput('L', false); }
+  if (e.code === 'KeyD' || e.code === 'ArrowRight'){ setInput('R', false); }
+});
+
+// Tap left/right half of canvas
+canvas.addEventListener('pointerdown', (e)=>{
+  const rect = canvas.getBoundingClientRect();
+  const x = e.clientX - rect.left;
+  setInput(x < rect.width/2 ? 'L' : 'R', true);
+});
+canvas.addEventListener('pointerup', ()=>{ setInput('L', false); setInput('R', false); });
+
+// -------------------- Background --------------------
+
+function mulberry32(seed){
+  let t = seed >>> 0;
+  return function(){
+    t += 0x6D2B79F5;
+    let r = Math.imul(t ^ (t >>> 15), 1 | t);
+    r ^= r + Math.imul(r ^ (r >>> 7), 61 | r);
+    return ((r ^ (r >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function makeStars(){
+  const rnd = mulberry32(1337 + W*7 + H*13);
+  state.stars.length = 0;
+  const n = Math.floor((W*H) / 5200);
+  for (let i=0;i<n;i++){
+    state.stars.push({
+      x: rnd()*W,
+      y: rnd()*H,
+      z: 0.2 + rnd()*0.8,
+      tw: rnd()*Math.PI*2,
+      s: 0.6 + rnd()*1.8,
+    });
+  }
+  // nebulas: a few big soft gradients
+  state.neb.length = 0;
+  const colors = ['rgba(96,165,250,.10)','rgba(52,211,153,.10)','rgba(251,113,133,.10)','rgba(168,85,247,.08)'];
+  for (let i=0;i<4;i++){
+    state.neb.push({
+      x: rnd()*W,
+      y: rnd()*H,
+      r: (0.45 + rnd()*0.85)*Math.min(W,H),
+      c: colors[i%colors.length],
+      dx: (rnd()-0.5)*6,
+      dy: (rnd()-0.5)*6,
     });
   }
 }
 
+function drawGalaxy(t){
+  // base gradient
+  const g = ctx.createLinearGradient(0,0,W,H);
+  g.addColorStop(0, '#070a10');
+  g.addColorStop(0.45, '#0b1020');
+  g.addColorStop(1, '#070a12');
+  ctx.fillStyle = g;
+  ctx.fillRect(0,0,W,H);
+
+  // drifting nebulas (slow)
+  for (const n of state.neb){
+    const x = (n.x + n.dx * (t*0.02)) % (W + n.r*0.2) - n.r*0.1;
+    const y = (n.y + n.dy * (t*0.02)) % (H + n.r*0.2) - n.r*0.1;
+    const gr = ctx.createRadialGradient(x,y, 0, x,y, n.r);
+    gr.addColorStop(0, n.c);
+    gr.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = gr;
+    ctx.fillRect(0,0,W,H);
+  }
+
+  // stars with subtle parallax based on x/angle
+  const px = state.x * 0.18;
+  const py = state.ang * 18;
+  for (const s of state.stars){
+    const tw = 0.6 + 0.4*Math.sin(s.tw + t*0.9);
+    const x = (s.x + px * s.z + (t*12*s.z)) % W;
+    const y = (s.y + py * s.z + (t*3*s.z)) % H;
+
+    const a = 0.55*tw;
+    ctx.fillStyle = `rgba(255,255,255,${a})`;
+    ctx.fillRect(x, y, s.s, s.s);
+  }
+}
+
+// -------------------- Audio --------------------
+
+let audio = null;
+
+function ensureAudio(){
+  if (!soundToggle?.checked) return;
+  if (audio && audio.ctx) return;
+  const AC = window.AudioContext || window.webkitAudioContext;
+  if (!AC) return;
+
+  const actx = new AC();
+  const master = actx.createGain();
+  master.gain.value = 0.6;
+  master.connect(actx.destination);
+
+  // looped noise buffer
+  const dur = 2.0;
+  const buf = actx.createBuffer(1, Math.floor(actx.sampleRate*dur), actx.sampleRate);
+  const data = buf.getChannelData(0);
+  for (let i=0;i<data.length;i++){
+    data[i] = (Math.random()*2-1) * 0.6;
+  }
+  const src = actx.createBufferSource();
+  src.buffer = buf;
+  src.loop = true;
+
+  // two filtered, panned branches
+  function branch(panVal){
+    const bp = actx.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.frequency.value = 260;
+    bp.Q.value = 0.8;
+
+    const hp = actx.createBiquadFilter();
+    hp.type = 'highpass';
+    hp.frequency.value = 70;
+
+    const pan = actx.createStereoPanner();
+    pan.pan.value = panVal;
+
+    const g = actx.createGain();
+    g.gain.value = 0.0;
+
+    src.connect(hp);
+    hp.connect(bp);
+    bp.connect(pan);
+    pan.connect(g);
+    g.connect(master);
+
+    return {hp,bp,pan,g};
+  }
+
+  const L = branch(-0.35);
+  const R = branch(0.35);
+
+  src.start();
+
+  audio = { ctx: actx, master, src, L, R, lastPop: 0 };
+}
+
+function audioSetThrusters(strL, strR){
+  if (!audio || !soundToggle?.checked) return;
+  const t = audio.ctx.currentTime;
+  const l = clamp(strL, 0, 1);
+  const r = clamp(strR, 0, 1);
+
+  audio.L.g.gain.setTargetAtTime(0.12*l, t, 0.03);
+  audio.R.g.gain.setTargetAtTime(0.12*r, t, 0.03);
+
+  // brighten with strength
+  audio.L.bp.frequency.setTargetAtTime(220 + 520*l, t, 0.04);
+  audio.R.bp.frequency.setTargetAtTime(220 + 520*r, t, 0.04);
+
+  // little pop on press
+  const pop = (l>0.05 || r>0.05);
+  if (pop && (t - audio.lastPop) > 0.08){
+    audio.lastPop = t;
+    const o = audio.ctx.createOscillator();
+    const g = audio.ctx.createGain();
+    o.type = 'triangle';
+    o.frequency.setValueAtTime(120 + 140*(l+r), t);
+    o.frequency.exponentialRampToValueAtTime(55, t+0.07);
+    g.gain.setValueAtTime(0.0, t);
+    g.gain.linearRampToValueAtTime(0.09, t+0.01);
+    g.gain.exponentialRampToValueAtTime(0.001, t+0.08);
+    o.connect(g); g.connect(audio.master);
+    o.start(t); o.stop(t+0.09);
+  }
+}
+
+function audioCrash(){
+  if (!audio || !soundToggle?.checked) return;
+  const t = audio.ctx.currentTime;
+  const o = audio.ctx.createOscillator();
+  const g = audio.ctx.createGain();
+  o.type = 'sawtooth';
+  o.frequency.setValueAtTime(180, t);
+  o.frequency.exponentialRampToValueAtTime(60, t+0.25);
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(0.18, t+0.03);
+  g.gain.exponentialRampToValueAtTime(0.0001, t+0.26);
+  o.connect(g); g.connect(audio.master);
+  o.start(t); o.stop(t+0.28);
+}
+
+function audioSuccess(){
+  if (!audio || !soundToggle?.checked) return;
+  const t = audio.ctx.currentTime;
+  const o = audio.ctx.createOscillator();
+  const g = audio.ctx.createGain();
+  o.type = 'sine';
+  o.frequency.setValueAtTime(520, t);
+  o.frequency.exponentialRampToValueAtTime(880, t+0.10);
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(0.14, t+0.02);
+  g.gain.exponentialRampToValueAtTime(0.0001, t+0.18);
+  o.connect(g); g.connect(audio.master);
+  o.start(t); o.stop(t+0.2);
+}
+
+// -------------------- Particles --------------------
+
+function spawnThruster(side, rocketX, rocketY, ang, strength){
+  const count = Math.floor(6 + 14*strength);
+  const base = 120 + 190*strength;
+  for (let i=0;i<count;i++){
+    const a = ang + Math.PI/2 + side*0.18 + (Math.random()-0.5)*0.35;
+    const sp = base + Math.random()*70;
+    state.parts.push({
+      x: rocketX + side*12 + (Math.random()-0.5)*6,
+      y: rocketY + 30 + (Math.random()-0.5)*4,
+      vx: Math.cos(a)*sp,
+      vy: Math.sin(a)*sp,
+      life: 0.20 + Math.random()*0.25,
+      r: 1.5 + Math.random()*2.8
+    });
+  }
+}
+
+function stepParticles(dt){
+  for (let i=state.parts.length-1;i>=0;i--){
+    const p = state.parts[i];
+    p.life -= dt;
+    p.x += p.vx*dt;
+    p.y += p.vy*dt;
+    p.vx *= 0.98;
+    p.vy *= 0.98;
+    if (p.life <= 0) state.parts.splice(i,1);
+  }
+}
+
+// -------------------- Game Loop --------------------
+
+let lastFrame = now();
+
 function update(dt){
-  const t = (tNow - tStart)/1000;
+  state.t += dt;
 
-  const baseRamp = 1 + Math.min(2.3, t/24);
-  const ramp = easyToggle.checked ? (1+(baseRamp-1)*0.72) : baseRamp;
+  // ramping wind: smooth + gusty
+  const ramp = TUNE.baseWind + TUNE.windRamp*state.t;
+  const gust = Math.sin(state.t*TUNE.windFreq*2*Math.PI) * TUNE.windGust;
+  const noise = (Math.sin(state.t*1.7) + Math.sin(state.t*0.91 + 2.1))*0.18;
+  let wind = ramp * (0.45 + 0.55*Math.tanh(gust + noise));
 
-  // wind target wander
-  s.windT += dt;
-  if(s.windT>2.0){
-    s.windT=0;
-    s.windTarget = clamp((Math.random()*2-1), -1, 1) * (0.22 + 0.28*Math.min(1,t/35));
-  }
-  s.wind = lerp(s.wind, s.windTarget, 1-Math.exp(-dt*1.1));
-  if(Math.random() < dt*(0.16+0.10*ramp)){
-    s.gust += (Math.random()*2-1)*0.65*ramp;
-  }
-  s.gust *= Math.exp(-dt*2.7);
-
-  // fuel
-  const pressing = (L?1:0) + (R?1:0);
-  const burn = 34*dt, refill=14*dt;
-  if(pressing) s.fuel = clamp(s.fuel - burn*pressing, 0, 100);
-  else s.fuel = clamp(s.fuel + refill, 0, 100);
-  const fuelFactor = 0.45 + 0.55*(s.fuel/100);
-
-  // angular dynamics
-  const thr = 7.0*ramp*fuelFactor;
-  const windTorque = 2.5*ramp;
-  let torque = 0;
-  if(L && s.fuel>0) torque += thr;
-  if(R && s.fuel>0) torque -= thr;
-  torque += (s.wind + 0.55*s.gust) * windTorque;
-
-  s.w += torque*dt;
-  s.w *= Math.exp(-dt*1.7);
-  s.ang += s.w*dt;
-
-  // lateral drift
-  const ax = (s.wind+0.35*s.gust)* (125*ramp) + s.ang*(250);
-  s.vx += ax*dt;
-  s.vx *= Math.exp(-dt*1.1);
-  s.x  += s.vx*dt;
-
-  // particles
-  const rx=W/2+s.x, ry=H/2+36;
-  if(L && s.fuel>0) spawnParticles(-1,rx,ry);
-  if(R && s.fuel>0) spawnParticles( 1,rx,ry);
-  for(let i=s.parts.length-1;i>=0;i--){
-    const p=s.parts[i];
-    p.life-=dt; p.x+=p.vx*dt; p.y+=p.vy*dt;
-    p.vx*=Math.exp(-dt*5.2); p.vy*=Math.exp(-dt*5.2);
-    p.r *=Math.exp(-dt*6.0);
-    if(p.life<=0||p.r<0.3) s.parts.splice(i,1);
+  if (isEasy()){
+    wind *= 0.72;
   }
 
-  // stability checks
-  const checkInterval = easyToggle.checked?10.5:9.5;
-  const duration = 2.6;
-  const need = easyToggle.checked?2.0:2.3;
-  const angB = easyToggle.checked?0.20:0.17;
-  const xBFrac = easyToggle.checked?0.13:0.11;
-  const maxX = Math.min(250, W*0.28);
+  // stability check scheduling
+  if (!state.checkActive){
+    const nextT = (state.checksDone+1) * TUNE.checkEvery;
+    if (state.t >= nextT){
+      state.checkActive = true;
+      state.checkT = 0;
+      state.checkHold = 0;
+    }
+  } else {
+    state.checkT += dt;
+    const okA = Math.abs(state.ang) < TUNE.checkTightAng;
+    const okX = Math.abs(state.x) < TUNE.checkTightX * W;
+    if (okA && okX){
+      state.checkHold += dt;
+    } else {
+      state.checkHold = Math.max(0, state.checkHold - dt*0.8);
+    }
 
-  if(!s.checkOn && t>=s.nextCheck){
-    s.checkOn=true; s.checkStart=t; s.checkProg=0;
-    beep(520,0.07,0.03);
-  }
-  if(s.checkOn){
-    const inBox = Math.abs(s.ang)<angB && Math.abs(s.x)<xBFrac*maxX;
-    if(inBox) s.checkProg += dt;
-    if(t - s.checkStart >= duration){
-      const win = s.checkProg>=need;
-      s.checkOn=false; s.nextCheck = t + checkInterval;
-      if(win){
-        s.wins++; s.fuel = clamp(s.fuel+35,0,100); s.gust*=0.65;
-        beep(880,0.06,0.03); setTimeout(()=>beep(660,0.07,0.03),60);
-      }else{
-        s.fails++; beep(220,0.10,0.03);
+    if (state.checkT >= TUNE.checkLen){
+      state.checksDone += 1;
+      if (state.checkHold >= 1.2){
+        state.checksPassed += 1;
+        state.score += TUNE.scoreCheck;
+        state.fuel = clamp(state.fuel + TUNE.fuelBonus, 0, 1);
+        audioSuccess();
+      } else {
+        // small penalty to make it feel like an event
+        state.score = Math.max(0, state.score - 80);
       }
+      state.checkActive = false;
+      state.checkT = 0;
+      state.checkHold = 0;
     }
   }
 
-  // crash
-  const maxAng = easyToggle.checked?0.82:0.76;
-  if(Math.abs(s.ang)>maxAng || Math.abs(s.x)>maxX) end();
+  // inputs -> torque and particles
+  let thrL = state.left ? 1 : 0;
+  let thrR = state.right ? 1 : 0;
+
+  // fuel limits thrust
+  const burn = (thrL + thrR) * TUNE.fuelBurn * dt;
+  state.fuel = clamp(state.fuel - burn, 0, 1);
+
+  if (state.fuel <= 0.001){
+    thrL = 0; thrR = 0;
+    state.left = false; state.right = false;
+  }
+
+  // regen when coasting
+  if (thrL + thrR === 0){
+    state.fuel = clamp(state.fuel + TUNE.fuelRegen*dt, 0, 1);
+  }
+
+  // apply dynamics (simple)
+  // wind pushes angle + lateral position
+  const torqueWind = wind * 1.25;
+  const forceWind = wind * 260;
+
+  const torqueCtrl = (thrR - thrL) * TUNE.torque * (isEasy()?0.9:1.0);
+  const forceCtrl  = (thrR - thrL) * 95;
+
+  state.w += (torqueWind + torqueCtrl) * dt;
+  state.w *= Math.exp(-TUNE.dampAng*dt);
+
+  state.ang += state.w * dt;
+
+  state.vx += (forceWind + forceCtrl) * dt;
+  state.vx *= Math.exp(-TUNE.dampX*dt);
+  state.x += state.vx * dt;
+
+  // scoring
+  state.score += TUNE.scoreTime * dt;
+  if (Math.abs(state.ang) < 0.09 && Math.abs(state.x) < 0.05*W){
+    state.score += TUNE.scoreClean * dt;
+  }
+
+  // particles + audio
+  const rocketX = W/2 + state.x;
+  const rocketY = H/2 + 34;
+
+  if (thrL) spawnThruster(-1, rocketX, rocketY, state.ang, 0.85);
+  if (thrR) spawnThruster(+1, rocketX, rocketY, state.ang, 0.85);
+
+  audioSetThrusters(thrL, thrR);
+
+  stepParticles(dt);
+
+  // crash conditions
+  const maxAng = (isEasy()?0.72: TUNE.maxAng);
+  const maxX = (isEasy()?0.52: TUNE.maxX) * W;
+
+  if (Math.abs(state.ang) > maxAng || Math.abs(state.x) > maxX){
+    crash();
+  }
 }
 
-function roundRect(x,y,w,h,r){
-  const rr=Math.min(r,w/2,h/2);
+function roundRect(ctx, x, y, w, h, r){
+  const rr = Math.min(r, w/2, h/2);
   ctx.beginPath();
-  ctx.moveTo(x+rr,y);
-  ctx.arcTo(x+w,y,x+w,y+h,rr);
-  ctx.arcTo(x+w,y+h,x,y+h,rr);
-  ctx.arcTo(x,y+h,x,y,rr);
-  ctx.arcTo(x,y,x+w,y,rr);
+  ctx.moveTo(x+rr, y);
+  ctx.arcTo(x+w, y, x+w, y+h, rr);
+  ctx.arcTo(x+w, y+h, x, y+h, rr);
+  ctx.arcTo(x, y+h, x, y, rr);
+  ctx.arcTo(x, y, x+w, y, rr);
   ctx.closePath();
 }
 
-function draw(){
-  // background
-  ctx.fillStyle='#060a12'; ctx.fillRect(0,0,W,H);
-  ctx.globalAlpha=0.75; ctx.fillStyle='rgba(255,255,255,.09)';
-  for(let i=0;i<90;i++){
-    const x=(i*97)%W, y=(i*193)%H, ssz=1+((i*31)%2);
-    ctx.fillRect(x,y,ssz,ssz);
-  }
-  ctx.globalAlpha=1;
-
-  // safe rails
-  const maxX = Math.min(250, W*0.28);
-  ctx.strokeStyle='rgba(96,165,250,.28)'; ctx.lineWidth=2;
-  ctx.beginPath();
-  ctx.moveTo(W/2-maxX,0); ctx.lineTo(W/2-maxX,H);
-  ctx.moveTo(W/2+maxX,0); ctx.lineTo(W/2+maxX,H);
-  ctx.stroke();
-
-  const t = running ? (tNow - tStart)/1000 : 0;
-  const scoreLive = (t*10) + (s.wins*250) + clamp((s.fuel/100)*120,0,120);
-
-  // HUD
-  const wind = clamp((s.wind+0.55*s.gust),-1,1);
-  ctx.fillStyle='rgba(255,255,255,.90)';
-  ctx.font='12px ui-monospace, Menlo, Consolas, monospace';
-  ctx.fillText(`time ${fmt(t)}   score ${Math.floor(scoreLive)}   checks ${s.wins}/${s.wins+s.fails}`, 14, 20);
-  ctx.fillStyle='rgba(163,163,163,.95)';
-  ctx.fillText(`wind ${(wind*100).toFixed(0)}%`, 14, 38);
-
-  // fuel bar
-  const fx=14, fy=50, fw=220, fh=10;
-  ctx.strokeStyle='rgba(255,255,255,.18)'; ctx.strokeRect(fx,fy,fw,fh);
-  ctx.fillStyle='rgba(52,211,153,.55)'; ctx.fillRect(fx,fy,fw*(s.fuel/100),fh);
-  ctx.fillStyle='rgba(255,255,255,.80)'; ctx.font='11px ui-monospace, Menlo, Consolas, monospace';
-  ctx.fillText('fuel', fx+fw+10, fy+9);
+function drawHUD(){
+  // top-left HUD
+  ctx.save();
+  ctx.font = '12px ui-monospace, SFMono-Regular, Menlo, monospace';
+  ctx.fillStyle = 'rgba(255,255,255,.85)';
+  ctx.fillText(`time ${state.t.toFixed(1)}s    score ${Math.floor(state.score)}    checks ${state.checksPassed}/${state.checksDone}`, 16, 22);
 
   // wind indicator
-  const ax=W-170, ay=18, wlen=95*wind;
-  ctx.strokeStyle='rgba(52,211,153,.70)'; ctx.lineWidth=3;
-  ctx.beginPath(); ctx.moveTo(ax,ay); ctx.lineTo(ax+wlen,ay); ctx.stroke();
-  ctx.fillStyle='rgba(52,211,153,.9)'; ctx.beginPath(); ctx.arc(ax+wlen,ay,5,0,Math.PI*2); ctx.fill();
+  const windPct = clamp((Math.sin(state.t*TUNE.windFreq*2*Math.PI)*0.5 + 0.5)*100 + (state.x/W)*30, 0, 100);
+  ctx.fillStyle = 'rgba(255,255,255,.60)';
+  ctx.fillText(`wind ${Math.floor(windPct)-50}%`, 16, 42);
 
-  // stability check box
-  if(s.checkOn){
-    const angB = easyToggle.checked?0.20:0.17;
-    const xBFrac = easyToggle.checked?0.13:0.11;
-    const bx=W/2-(xBFrac*maxX), bw=2*(xBFrac*maxX);
-    const by=H/2-90, bh=180;
+  // fuel bar
+  const x = 16, y = 54, w = 220, h = 10;
+  ctx.fillStyle = 'rgba(255,255,255,.12)';
+  roundRect(ctx, x, y, w, h, 6); ctx.fill();
+  ctx.fillStyle = 'rgba(52,211,153,.55)';
+  roundRect(ctx, x, y, w*state.fuel, h, 6); ctx.fill();
+  ctx.fillStyle = 'rgba(255,255,255,.45)';
+  ctx.fillText('fuel', x+w+10, y+9);
 
-    ctx.strokeStyle='rgba(52,211,153,.55)'; ctx.lineWidth=2;
-    roundRect(bx,by,bw,bh,14); ctx.stroke();
-
-    const need = easyToggle.checked?2.0:2.3;
-    const p=clamp(s.checkProg/need,0,1);
-    ctx.fillStyle='rgba(52,211,153,.20)';
-    roundRect(bx+10, by+bh-22, (bw-20)*p, 10, 7); ctx.fill();
-
-    ctx.fillStyle='rgba(255,255,255,.84)'; ctx.font='12px ui-monospace, Menlo, Consolas, monospace';
-    ctx.fillText('STABILITY CHECK', bx+12, by+20);
-
-    const centerY=by+bh/2;
-    const tilt=clamp(s.ang/angB,-1,1);
-    ctx.fillStyle='rgba(96,165,250,.75)'; ctx.fillRect(bx+bw+10, centerY-36, 4, 72);
-    ctx.fillStyle='rgba(52,211,153,.9)'; ctx.fillRect(bx+bw+6, centerY + tilt*32 - 6, 12, 12);
+  // stability check banner
+  if (state.checkActive){
+    const p = clamp(state.checkT / TUNE.checkLen, 0, 1);
+    ctx.globalAlpha = 0.95;
+    ctx.fillStyle = 'rgba(0,0,0,.35)';
+    roundRect(ctx, W/2 - 110, 70, 220, 28, 12); ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,.85)';
+    ctx.textAlign = 'center';
+    ctx.fillText('STABILITY CHECK', W/2, 89);
+    ctx.textAlign = 'left';
+    // progress bar under
+    ctx.fillStyle = 'rgba(255,255,255,.14)';
+    roundRect(ctx, W/2-80, 98, 160, 6, 4); ctx.fill();
+    ctx.fillStyle = 'rgba(96,165,250,.65)';
+    roundRect(ctx, W/2-80, 98, 160*p, 6, 4); ctx.fill();
+    ctx.globalAlpha = 1;
   }
 
-  // particles
-  ctx.globalCompositeOperation='lighter';
-  for(const p of s.parts){
-    ctx.globalAlpha=clamp(p.life/0.45,0,1);
-    ctx.fillStyle='rgba(96,165,250,.55)';
-    ctx.beginPath(); ctx.arc(p.x,p.y,p.r,0,Math.PI*2); ctx.fill();
+  ctx.restore();
+}
+
+function drawRocket(rocketX, rocketY){
+  const ang = state.ang;
+  const thrL = state.left && state.fuel > 0.01;
+  const thrR = state.right && state.fuel > 0.01;
+
+  ctx.save();
+  ctx.translate(rocketX, rocketY);
+  ctx.rotate(ang);
+
+  // shadow
+  ctx.globalAlpha = 0.25;
+  ctx.fillStyle = '#000';
+  ctx.beginPath();
+  ctx.ellipse(4, 48, 18, 6, 0, 0, Math.PI*2);
+  ctx.fill();
+  ctx.globalAlpha = 1;
+
+  // body gradient
+  const bodyG = ctx.createLinearGradient(-16, -50, 16, 50);
+  bodyG.addColorStop(0, 'rgba(255,255,255,.92)');
+  bodyG.addColorStop(0.55, 'rgba(215,225,240,.92)');
+  bodyG.addColorStop(1, 'rgba(255,255,255,.84)');
+
+  // main capsule
+  ctx.fillStyle = bodyG;
+  roundRect(ctx, -16, -52, 32, 92, 14); ctx.fill();
+
+  // nose cone
+  ctx.fillStyle = 'rgba(255,255,255,.92)';
+  ctx.beginPath();
+  ctx.moveTo(0, -70);
+  ctx.lineTo(14, -52);
+  ctx.lineTo(-14, -52);
+  ctx.closePath();
+  ctx.fill();
+
+  // small highlight strip
+  ctx.fillStyle = 'rgba(96,165,250,.18)';
+  roundRect(ctx, -10, -38, 7, 56, 6); ctx.fill();
+
+  // window
+  ctx.fillStyle = 'rgba(59,130,246,.35)';
+  ctx.beginPath();
+  ctx.arc(0, -14, 8.2, 0, Math.PI*2);
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,255,.35)';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  // fins
+  ctx.fillStyle = 'rgba(251,113,133,.85)';
+  ctx.beginPath(); // left fin
+  ctx.moveTo(-16, 22);
+  ctx.lineTo(-30, 34);
+  ctx.lineTo(-16, 38);
+  ctx.closePath(); ctx.fill();
+
+  ctx.beginPath(); // right fin
+  ctx.moveTo(16, 22);
+  ctx.lineTo(30, 34);
+  ctx.lineTo(16, 38);
+  ctx.closePath(); ctx.fill();
+
+  // engine block
+  ctx.fillStyle = 'rgba(148,163,184,.85)';
+  roundRect(ctx, -12, 34, 24, 10, 6); ctx.fill();
+
+  // nozzles
+  ctx.fillStyle = 'rgba(15,23,42,.75)';
+  roundRect(ctx, -16, 40, 10, 10, 5); ctx.fill();
+  roundRect(ctx, 6, 40, 10, 10, 5); ctx.fill();
+
+  // flames (per thruster)
+  function flame(x){
+    const f = ctx.createRadialGradient(x, 55, 0, x, 55, 18);
+    f.addColorStop(0,'rgba(255,255,255,.95)');
+    f.addColorStop(0.35,'rgba(96,165,250,.70)');
+    f.addColorStop(1,'rgba(96,165,250,0)');
+    ctx.fillStyle = f;
+    ctx.beginPath();
+    ctx.moveTo(x-6, 46);
+    ctx.quadraticCurveTo(x, 68, x+6, 46);
+    ctx.closePath();
+    ctx.fill();
   }
-  ctx.globalAlpha=1; ctx.globalCompositeOperation='source-over';
+  if (thrL) flame(-11);
+  if (thrR) flame(11);
+
+  ctx.restore();
+}
+
+function draw(){
+  drawGalaxy(state.t);
+
+  // faint guide rails
+  ctx.strokeStyle = 'rgba(96,165,250,.10)';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(W*0.33, 0); ctx.lineTo(W*0.33, H);
+  ctx.moveTo(W*0.66, 0); ctx.lineTo(W*0.66, H);
+  ctx.stroke();
+
+  drawHUD();
+
+  // particles (in screen space)
+  ctx.globalCompositeOperation = 'lighter';
+  for (const p of state.parts){
+    const a = clamp(p.life / 0.45, 0, 1);
+    ctx.globalAlpha = 0.85*a;
+    ctx.fillStyle = 'rgba(96,165,250,.65)';
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.r, 0, Math.PI*2);
+    ctx.fill();
+  }
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.globalAlpha = 1;
 
   // rocket
-  const rx=W/2+s.x, ry=H/2+36;
-  ctx.save();
-  ctx.translate(rx,ry); ctx.rotate(s.ang);
+  const rocketX = W/2 + state.x;
+  const rocketY = H/2 + 34;
+  drawRocket(rocketX, rocketY);
 
-  ctx.fillStyle='rgba(229,231,235,.94)';
-  roundRect(-14,-50,28,88,10); ctx.fill();
-  ctx.fillStyle='rgba(96,165,250,.55)';
-  ctx.beginPath(); ctx.arc(0,-18,7,0,Math.PI*2); ctx.fill();
-
-  ctx.fillStyle='rgba(229,231,235,.96)';
-  ctx.beginPath(); ctx.moveTo(-14,-50); ctx.lineTo(0,-76); ctx.lineTo(14,-50); ctx.closePath(); ctx.fill();
-
-  ctx.fillStyle='rgba(251,113,133,.78)';
-  ctx.beginPath(); ctx.moveTo(-14,26); ctx.lineTo(-34,48); ctx.lineTo(-14,48); ctx.closePath(); ctx.fill();
-  ctx.beginPath(); ctx.moveTo(14,26); ctx.lineTo(34,48); ctx.lineTo(14,48); ctx.closePath(); ctx.fill();
-
-  // flames
-  if(L && s.fuel>0) flame(-10,48,-1);
-  if(R && s.fuel>0) flame( 10,48, 1);
-
-  ctx.restore();
-
-  // danger bar
-  const maxAng=easyToggle.checked?0.82:0.76;
-  const danger=Math.min(1, Math.abs(s.ang)/maxAng);
-  if(running && danger>0.62){
-    ctx.fillStyle=`rgba(251,113,133,${(danger-0.62)/0.38*0.85})`;
-    ctx.fillRect(0,0,W,4);
+  // safe bounds overlay (only when checking)
+  if (state.checkActive){
+    ctx.save();
+    ctx.strokeStyle = 'rgba(52,211,153,.18)';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([8,6]);
+    const bx = W/2 - TUNE.checkTightX*W;
+    const bw = 2*TUNE.checkTightX*W;
+    ctx.strokeRect(bx, 0, bw, H);
+    ctx.restore();
   }
 }
 
-function flame(x,y,side){
-  ctx.save(); ctx.translate(x,y); ctx.rotate(side*0.16);
-  ctx.fillStyle='rgba(52,211,153,.82)';
-  ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(-4,18); ctx.lineTo(4,18); ctx.closePath(); ctx.fill();
-  ctx.restore();
+function frame(){
+  const t = now();
+  const dt = clamp((t - lastFrame)/1000, 0, 0.033);
+  lastFrame = t;
+
+  if (state.running){
+    update(dt);
+    draw();
+    if (state.running) requestAnimationFrame(frame);
+  } else {
+    draw(); // keep background alive behind overlay
+  }
 }
 
-function frame(now){
-  tNow=now;
-  const dt = clamp((now - tLast)/1000, 0, 0.033);
-  tLast=now;
-  if(running) update(dt);
-  draw();
-  if(running) requestAnimationFrame(frame);
-}
-
-// Share + reset
-function buildShare(){
-  const msg =
-`🚀 Balance the Rocket
-Time: ${fmt(lastT ?? 0)}  Score: ${Math.floor(lastS ?? 0)}
-Checks: ${lastChecks ?? '—'}
-Play: ${location.href}`;
-  return msg;
-}
-shareBtn.addEventListener('click',()=>{
-  navigator.clipboard?.writeText(buildShare()).catch(()=>{});
-  beep(880,0.07,0.03);
-});
-resetBtn.addEventListener('click',()=>{
-  localStorage.removeItem(STORE.bt);
-  localStorage.removeItem(STORE.bs);
-  bestT=0; bestS=0;
-  bestTEl.textContent=fmt(bestT); bestSEl.textContent=Math.floor(bestS);
-  beep(240,0.08,0.03);
-});
-startBtn.addEventListener('click',()=>{ if(!running) start(); });
-
+// init
 resize();
+resetRun(false);
 showOverlay('start');
+draw();
+
+// stop sound cleanly if user toggles off
+soundToggle?.addEventListener('change', ()=>{
+  if (!soundToggle.checked){
+    if (audio?.master){
+      try{ audio.master.gain.value = 0; }catch{}
+    }
+  } else {
+    ensureAudio();
+  }
+});

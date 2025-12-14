@@ -11,46 +11,56 @@
     <div class="game-top">
       <div class="game-title">
         <h1>🪐 Orbit Hop</h1>
-        <p>Hold to boost outward, release to coast. Avoid atmosphere + debris. Collect 10 stars.</p>
-        <div class="badges">
-          <div class="badge">Hold = thrust</div>
-          <div class="badge">Release = coast</div>
-          <div class="badge">Daily seed mode</div>
+        <p>Hold to thrust, release to coast. Visit planets, collect stars, and don’t dive into atmosphere.</p>
+        <div class="chips">
+          <span class="chip">Hold = thrust</span>
+          <span class="chip">Release = coast</span>
+          <span class="chip">Camera follows</span>
+          <span class="chip">3 planets</span>
         </div>
       </div>
       <a class="btn ghost" href="../../index.html">← Back</a>
     </div>
 
-    <div class="canvas-wrap" id="wrap">
-      <canvas id="c"></canvas>
+    <div class="game-stage">
+      <canvas id="c" class="game-canvas" aria-label="Orbit Hop game canvas"></canvas>
 
-      <div class="overlay" id="overlay">
+      <div id="overlay" class="overlay" style="display:flex">
         <div class="overlay-card">
-          <h3 id="title">Orbit Hop</h3>
-          <p class="muted" id="desc">Collect <b>10 stars</b>. Don’t dip into the atmosphere.</p>
+          <h3 id="overlayTitle">Orbit Hop</h3>
+          <p id="overlayText">Hold to thrust prograde (forward). Release to coast. Land gently on planets to “visit” them.</p>
 
           <div class="row">
-            <div class="kv">Best Stars: <span id="bestS">0</span></div>
-            <div class="kv">Best Time: <span id="bestT">0.0s</span></div>
+            <div class="kv">
+              <div><b>Best:</b> <span id="best">0</span></div>
+              <div><b>Last:</b> <span id="last">—</span></div>
+            </div>
+            <div class="kv" style="text-align:right">
+              <div><b>Mode:</b> <span id="modeLabel">free</span></div>
+              <div><b>Daily Seed:</b> <span id="seedLabel">—</span></div>
+            </div>
           </div>
+
+          <div class="row" style="margin-top:14px">
+            <label class="chip" style="display:flex; gap:8px; align-items:center; cursor:pointer">
+              <input id="soundToggle" type="checkbox" checked />
+              <span>Sound</span>
+            </label>
+
+            <label class="chip" style="display:flex; gap:8px; align-items:center; cursor:pointer">
+              <input id="dailyToggle" type="checkbox" />
+              <span>Daily seed mode</span>
+            </label>
+          </div>
+
           <div class="row">
-            <div class="kv">Last: <span id="last">—</span></div>
-            <div class="kv">Stars: <span id="lastS">—</span></div>
+            <button id="startBtn" class="btn">Start</button>
+            <button id="shareBtn" class="btn ghost">Share</button>
+            <button id="resetBtn" class="btn danger">Reset</button>
           </div>
 
-          <div class="toggle-row">
-            <div class="switch"><input type="checkbox" id="sound"><label for="sound">Sound</label></div>
-            <div class="switch"><input type="checkbox" id="daily"><label for="daily">Daily seed</label></div>
-          </div>
-
-          <div class="row">
-            <button class="btn" id="start">Start</button>
-            <button class="btn ghost" id="share">Share</button>
-            <button class="btn danger" id="reset">Reset</button>
-          </div>
-
-          <p class="muted" style="margin-top:12px; font-size:12px;">
-            Hint: boost near periapsis. Spamming thrust usually makes your orbit worse.
+          <p class="muted" style="margin-top:12px;font-size:12px;">
+            Tip: thrust in short bursts to correct your path. Near a planet, coast to let gravity curve you.
           </p>
         </div>
       </div>

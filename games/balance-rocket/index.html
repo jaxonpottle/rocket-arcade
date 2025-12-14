@@ -12,52 +12,63 @@
       <div class="game-title">
         <h1>🚀 Balance the Rocket</h1>
         <p>Survive the wind — but score big by completing stability checks. Fuel matters.</p>
-        <div class="badges">
-          <div class="badge">A / ← left</div>
-          <div class="badge">D / → right</div>
-          <div class="badge">Tap left/right half</div>
-          <div class="badge">Checks + fuel</div>
+        <div class="chips">
+          <span class="chip">A / ← left</span>
+          <span class="chip">D / → right</span>
+          <span class="chip">Tap left/right half</span>
+          <span class="chip">Checks + fuel</span>
         </div>
       </div>
       <a class="btn ghost" href="../../index.html">← Back</a>
     </div>
 
-    <div class="canvas-wrap" id="wrap">
-      <canvas id="c"></canvas>
+    <div class="game-stage">
+      <canvas id="c" class="game-canvas" aria-label="Balance the Rocket game canvas"></canvas>
 
-      <div class="overlay" id="overlay">
+      <div id="overlay" class="overlay" style="display:flex">
         <div class="overlay-card">
-          <h3 id="title">Balance the Rocket</h3>
-          <p id="desc" class="muted">
-            Every ~10 seconds, a <b>stability check</b> appears. Stay inside the green box long enough to pass and refuel.
-          </p>
+          <h3 id="overlayTitle">Balance the Rocket</h3>
+          <p id="overlayText">Hold A/← or D/→ to fire thrusters. Small early taps beat big swings.</p>
 
           <div class="row">
-            <div class="kv">Best: <span id="bestT">0.0s</span></div>
-            <div class="kv">Best Score: <span id="bestS">0</span></div>
-          </div>
-          <div class="row">
-            <div class="kv">Last: <span id="lastT">—</span></div>
-            <div class="kv">Last Score: <span id="lastS">—</span></div>
-          </div>
-
-          <div class="toggle-row">
-            <div class="switch"><input type="checkbox" id="sound"><label for="sound">Sound</label></div>
-            <div class="switch"><input type="checkbox" id="easy"><label for="easy">Easy mode</label></div>
+            <div class="kv">
+              <div><b>Best:</b> <span id="best">0.0s</span></div>
+              <div><b>Last:</b> <span id="last">—</span></div>
+            </div>
+            <div class="kv" style="text-align:right">
+              <div><b>Best Score:</b> <span id="bestScore">0</span></div>
+              <div><b>Last Score:</b> <span id="lastScore">—</span></div>
+            </div>
           </div>
 
+          <div class="row" style="margin-top:14px">
+            <label class="chip" style="display:flex; gap:8px; align-items:center; cursor:pointer">
+              <input id="soundToggle" type="checkbox" checked />
+              <span>Sound</span>
+            </label>
+
+            <label class="chip" style="display:flex; gap:8px; align-items:center; cursor:pointer">
+              <input id="easyToggle" type="checkbox" />
+              <span>Easy mode</span>
+            </label>
+          </div>
+
           <div class="row">
-            <button class="btn" id="start">Start</button>
-            <button class="btn ghost" id="share">Share</button>
-            <button class="btn danger" id="reset">Reset</button>
+            <button id="startBtn" class="btn">Start</button>
+            <button id="shareBtn" class="btn ghost">Share</button>
+            <button id="resetBtn" class="btn danger">Reset</button>
           </div>
 
           <div class="controls">
-            <button class="ctrl-btn" id="L">◀ Left Thruster<br><span class="small">A / ←</span></button>
-            <button class="ctrl-btn" id="R">Right Thruster ▶<br><span class="small">D / →</span></button>
+            <button id="leftBtn" class="ctrl-btn">
+              ◀ Left Thruster<br><span class="small">A / ←</span>
+            </button>
+            <button id="rightBtn" class="ctrl-btn">
+              Right Thruster ▶<br><span class="small">D / →</span>
+            </button>
           </div>
 
-          <p class="muted" style="margin-top:12px; font-size:12px;">
+          <p class="muted" style="margin-top:12px;font-size:12px;">
             Tip: don’t overcorrect. Tap early and small to damp the wobble.
           </p>
         </div>
